@@ -127,6 +127,8 @@ def demander_arret(leds=False):
 
 
 def arret_demande():
+    """Vrai si l'arrêt a été demandé (touche, fenêtre de réglages ou --stop). Le fichier
+    d'arrêt est lu une fois puis l'événement ARRET mémorise la demande."""
     if not ARRET.is_set() and os.path.exists(FICHIER_STOP):
         try:
             with open(FICHIER_STOP) as f:
@@ -165,7 +167,12 @@ DEFAUT = {
                          "heure": {"actif": True, "texte": "Il est {heure}."},
                          "meteo": {"actif": True, "texte": "Il fait {temperature} degrés à {ville}, avec {ciel}."},
                          "cours": {"actif": True, "texte": "Votre prochain cours, {cours}, commence à {heure_cours}{salle}."},
-                         "mails": {"actif": True, "texte": "{mails}."},
+                         # Mails : « texte » s'il y a plusieurs nouveaux mails, « un » pour un seul,
+                         # « aucun » s'il n'y en a pas (vide = rien n'est dit)
+                         "mails": {"actif": True,
+                                   "texte": "Vous avez {nb_mails} nouveaux mails, dont le dernier de {expediteur}.",
+                                   "un": "Vous avez un nouveau mail, de {expediteur}.",
+                                   "aucun": "Aucun nouveau mail."},
                          "fin": {"actif": True, "texte": "Votre espace de travail est prêt."}},
              "secours": "Bienvenue Monsieur. Votre espace de travail est prêt."},
     "musique": {"fichier": "highway_to_hell.mp3",
@@ -271,12 +278,8 @@ def _fusionner(defaut, donnees, chemin=""):
                 defaut[cle] = val
             else:
                 ALERTES_CONFIG.append(f"Réglage « {nom} » invalide, valeur par défaut utilisée")
-        elif isinstance(attendu, (int, float)) and isinstance(val, (int, float)):
-            defaut[cle] = val
-        elif isinstance(attendu, str) and isinstance(val, str):
-            defaut[cle] = val
-        elif isinstance(attendu, list) and isinstance(val, list):
-            defaut[cle] = val
+        elif any(isinstance(attendu, t) and isinstance(val, t) for t in ((int, float), str, list)):
+            defaut[cle] = val                    # même type que la valeur par défaut : acceptée
         else:
             ALERTES_CONFIG.append(f"Réglage « {nom} » invalide, valeur par défaut utilisée")
 
@@ -326,6 +329,12 @@ def charger_config():
         p = v["parties"].get(nom_partie)
         if not isinstance(p, dict) or not isinstance(p.get("texte"), str):
             v["parties"][nom_partie] = dict(defaut_partie)
+    m = v["parties"]["mails"]
+    if m["texte"].strip() == "{mails}.":                 # ancienne phrase toute faite : modèles par défaut
+        m.update({k: DEFAUT["voix"]["parties"]["mails"][k] for k in ("texte", "un", "aucun")})
+    for k in ("un", "aucun"):
+        if not isinstance(m.get(k), str):
+            m[k] = DEFAUT["voix"]["parties"]["mails"][k]
     return cfg
 
 
@@ -613,15 +622,27 @@ def chercher_leds(delai=1.5):
             d = json.loads(rep.recvfrom(4096)[0])["msg"]["data"]
             trouvees[d["ip"]] = d.get("sku", "?")
             fin = min(fin, time.time() + 0.3)
-        except (socket.timeout, ValueError, KeyError, OSError):
+        except (TimeoutError, ValueError, KeyError, OSError):
             pass
     rep.close()
     return trouvees
 
 
 def hex_rgb(h):
+    """'#rrggbb' -> (r, g, b) en 0-255."""
     h = h.lstrip("#")
     return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def commande_govee(cmd, valeur):
+    """Message UDP de l'API LAN Govee. 'turn' et 'brightness' : un nombre ; 'colorwc' : (r, g, b)."""
+    if cmd in ("turn", "brightness"):
+        data = {"value": int(valeur)}
+    elif cmd == "colorwc":
+        data = {"color": dict(zip("rgb", map(int, valeur))), "colorTemInKelvin": 0}
+    else:
+        data = valeur
+    return json.dumps({"msg": {"cmd": cmd, "data": data}}).encode()
 
 
 def etat_led(ip, delai=0.8):
@@ -640,7 +661,7 @@ def etat_led(ip, delai=0.8):
                     msg = json.loads(donnees).get("msg", {})
                     if msg.get("cmd") == "devStatus":
                         return msg.get("data", {})
-    except (socket.timeout, OSError, ValueError):
+    except (TimeoutError, OSError, ValueError):
         pass
     return None
 
@@ -686,15 +707,19 @@ _leds = {"ips": []}
 
 
 def eteindre_leds(ips=None):
+    """Éteint les LED (deux envois : l'UDP ne garantit pas la réception)."""
     ips = ips or _leds["ips"] or ([CFG["leds"]["ip"]] if CFG["leds"]["ip"] else [])
+    eteint = commande_govee("turn", 0)
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         for _ in range(2):
             for ip in ips:
-                s.sendto(b'{"msg":{"cmd":"turn","data":{"value":0}}}', (ip, 4003))
+                s.sendto(eteint, (ip, 4003))
             time.sleep(0.1)
 
 
 def animer_leds(ips=None, confirmees=None, motif=None):
+    """Animation d'allumage (motif choisi) puis couleur et luminosité finales, vérifiées auprès
+    des LED. 'ips' / 'confirmees' : déjà trouvées par l'appelant (sinon recherche ici)."""
     c = CFG["leds"]
     if not c["active"]:
         return
@@ -711,16 +736,16 @@ def animer_leds(ips=None, confirmees=None, motif=None):
     motif = motif or c["motif"]
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        def envoyer(cmd, data):
-            m = json.dumps({"msg": {"cmd": cmd, "data": data}}).encode()
+        def envoyer(cmd, valeur):
+            m = commande_govee(cmd, valeur)
             for ip in ips:
                 s.sendto(m, (ip, 4003))
 
         def couleur(rgb):
-            envoyer("colorwc", {"color": dict(zip("rgb", map(int, rgb))), "colorTemInKelvin": 0})
+            envoyer("colorwc", rgb)
 
         def lum(v):
-            envoyer("brightness", {"value": max(1, min(100, round(v)))})
+            envoyer("brightness", max(1, min(100, round(v))))
 
         def etapes(pas=0.1):                 # progression de 0 à 1 pendant 'duree' secondes
             t0, i = time.time(), 0
@@ -729,7 +754,7 @@ def animer_leds(ips=None, confirmees=None, motif=None):
                 i += 1
                 time.sleep(pas)
 
-        envoyer("turn", {"value": 1})            # les LED ignorent parfois des commandes trop
+        envoyer("turn", 1)            # les LED ignorent parfois des commandes trop
         time.sleep(0.15)                         # rapprochées : on les espace un peu
         lum(1 if motif == "fondu" else lum_max)
         time.sleep(0.15)
@@ -751,7 +776,7 @@ def animer_leds(ips=None, confirmees=None, motif=None):
                 lum(1 + (lum_max - 1) * p)
 
         if arret_leds_demande():
-            envoyer("turn", {"value": 0})
+            envoyer("turn", 0)
             return
         # État final, puis vérification auprès des LED (l'UDP ne garantit pas la réception) :
         # jusqu'à 3 essais, et une alerte dans le journal si ce n'est pas confirmé.
@@ -762,8 +787,8 @@ def animer_leds(ips=None, confirmees=None, motif=None):
             return all(abs(int(rgb.get(k, -99)) - v) <= 3 for k, v in zip("rgb", final))
 
         etats = {}
-        for essai in range(3):
-            envoyer("turn", {"value": 1})
+        for _ in range(3):
+            envoyer("turn", 1)
             time.sleep(0.15)
             couleur(final)
             time.sleep(0.15)
@@ -814,6 +839,8 @@ def etat_prechargement(musique):
 
 
 def analyser_rythme(musique):
+    """Analyse complète d'un morceau (quelques secondes) : instants et force des attaques,
+    niveau sonore, passages calmes et silences. Résultat écrit dans cache_rythme/."""
     import soundfile as sf
     x, sr = sf.read(musique, dtype="float32", always_2d=True)
     x = x.mean(axis=1)
@@ -985,7 +1012,7 @@ def programme_leds(analyse, c):
     groupes_coups = series(coups)                # 1. flashs forts + retombée
     retombees = {}                               # dernier coup d'une série -> instant de retombée
     for n, serie in enumerate(groupes_coups):
-        for k, (t, f) in enumerate(serie):
+        for k, (t, _force) in enumerate(serie):
             # Tout ou rien : le contrôleur Govee lisse déjà beaucoup les variations
             val = lum(100 if (len(serie) - 1 - k) % 2 == 0 else 30)   # série : fort / faible / fort
             ajouter(t, "brightness", val)
@@ -1036,7 +1063,7 @@ def programme_leds(analyse, c):
             if rallume is not None:
                 ajouter(rallume, "turn", 1)
     else:
-        for a, b in silences:
+        for a, _fin in silences:
             if libre(a):
                 ajouter(a, "brightness", 1)
     eteint = lambda t: any(a <= t <= b for a, b in eteintes)
@@ -1076,13 +1103,7 @@ def rythme_leds(lecteur, ips, musique):
     avance = float(c.get("rythme", {}).get("avance_ms", 150)) / 1000
     final = hex_rgb(c["couleur"])
     print(f"LED : rythme préchargé, {len(prog)} commandes ({MODES_RYTHME.get(c['rythme'].get('mode'), '')})")
-    def message(cmd, data):
-        if cmd in ("brightness", "turn"):
-            data = {"value": data}
-        elif cmd == "colorwc":
-            data = {"color": dict(zip("rgb", data)), "colorTemInKelvin": 0}
-        return json.dumps({"msg": {"cmd": cmd, "data": data}}).encode()
-
+    message = commande_govee
     prog = [(t, cmd, message(cmd, val)) for t, cmd, val in prog]     # prêts à partir
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         def envoyer(m):
@@ -1266,6 +1287,7 @@ def enregistrer_mot_de_passe(adresse, mot_de_passe):
 
 
 def lire_mot_de_passe(adresse):
+    """Mot de passe IMAP gardé dans le Gestionnaire d'identification, ou None."""
     p = ctypes.POINTER(_CREDENTIAL)()
     if not ctypes.windll.advapi32.CredReadW(_cible(adresse), 1, 0, ctypes.byref(p)):
         return None
@@ -1288,26 +1310,60 @@ def _decoder(entete):
         return (entete or "").strip()
 
 
+# « Nouveaux » mails = non lus arrivés depuis le dernier lancement de Runner (7 jours au plus) :
+# un total de non lus (souvent des milliers) n'est pas une information utile au réveil.
+FICHIER_DERNIER_LANCEMENT = _cache("dernier_lancement")
+MAX_NOUVEAUX = 50                                # au-delà : « plus de 50 nouveaux mails »
+
+
+def depuis_dernier_lancement():
+    """Instant (timestamp) à partir duquel un mail non lu compte comme nouveau."""
+    try:
+        t = os.path.getmtime(FICHIER_DERNIER_LANCEMENT)
+    except OSError:
+        t = time.time() - 86400                  # premier lancement : les dernières 24 h
+    return max(t, time.time() - 7 * 86400)
+
+
+def noter_lancement():
+    with open(FICHIER_DERNIER_LANCEMENT, "w") as f:
+        f.write(datetime.now().isoformat(timespec="seconds"))
+
+
+MOIS_IMAP = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def lire_boite(compte, mot_de_passe=None):
-    """{'non_lus': n, 'derniers': [(expéditeur, objet), …]} pour un compte IMAP (lecture seule :
-    rien n'est marqué comme lu)."""
+    """{'non_lus': total, 'nouveaux': n, 'derniers': [(expéditeur, objet)…]} pour un compte IMAP.
+    Les 'derniers' sont les 5 plus récents des nouveaux. Lecture seule : rien n'est marqué comme lu."""
     import imaplib
     from email.parser import BytesHeaderParser
     from email.utils import parseaddr
     mdp = mot_de_passe or lire_mot_de_passe(compte["adresse"])
     if not mdp:
         raise OSError("mot de passe non enregistré")
+    depuis = depuis_dernier_lancement()
+    jour = datetime.fromtimestamp(depuis)
     with imaplib.IMAP4_SSL(compte["serveur"].strip(), 993, timeout=10) as imap:
         imap.login(compte["adresse"].strip(), mdp)
         imap.select("INBOX", readonly=True)
-        ids = imap.search(None, "UNSEEN")[1][0].split()
+        total = len(imap.search(None, "UNSEEN")[1][0].split())
+        # SINCE ne connaît que le jour : l'heure exacte d'arrivée est vérifiée ensuite
+        ids = imap.search(None, "UNSEEN", "SINCE", f"{jour.day}-{MOIS_IMAP[jour.month - 1]}-{jour.year}")[1][0].split()
+        nouveaux = []
+        if ids:
+            for ligne in imap.fetch(b",".join(ids[-(MAX_NOUVEAUX + 1):]), "(INTERNALDATE)")[1]:
+                if isinstance(ligne, bytes):
+                    date = imaplib.Internaldate2tuple(ligne)
+                    if date and time.mktime(date) > depuis:
+                        nouveaux.append(ligne.split()[0])
         derniers = []
-        for i in reversed(ids[-5:]):                            # les 5 plus récents
+        for i in reversed(nouveaux[-5:]):                       # les 5 plus récents
             brut = imap.fetch(i, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])")[1][0][1]
             entete = BytesHeaderParser().parsebytes(brut)
             nom, adresse = parseaddr(_decoder(entete.get("From")))
             derniers.append((nom or adresse, _decoder(entete.get("Subject")) or "(sans objet)"))
-    return {"non_lus": len(ids), "derniers": derniers}
+    return {"non_lus": total, "nouveaux": len(nouveaux), "derniers": derniers}
 
 
 # Gmail par « Se connecter avec Google » (OAuth 2.0, méthode officielle de Google) : aucun mot de
@@ -1448,8 +1504,10 @@ def lire_gmail(compte):
     """Même résultat que lire_boite, par l'API Gmail en lecture seule."""
     jeton = jeton_google(compte["adresse"])
     non_lus = _api(f"{API_GMAIL}/labels/INBOX", jeton=jeton).get("messagesUnread", 0)
-    liste = _api(f"{API_GMAIL}/messages?" + urllib.parse.urlencode({"q": "is:unread in:inbox", "maxResults": 5}),
-                 jeton=jeton).get("messages", [])
+    requete = f"is:unread in:inbox after:{int(depuis_dernier_lancement())}"
+    nouveaux = _api(f"{API_GMAIL}/messages?" + urllib.parse.urlencode({"q": requete, "maxResults": MAX_NOUVEAUX + 1}),
+                    jeton=jeton).get("messages", [])
+    liste = nouveaux[:5]
     from email.utils import parseaddr
     derniers = []
     for m in liste:
@@ -1458,7 +1516,7 @@ def lire_gmail(compte):
         entetes = {h["name"].lower(): h["value"] for h in d.get("payload", {}).get("headers", [])}
         nom, adresse = parseaddr(entetes.get("from", ""))
         derniers.append((nom or adresse, entetes.get("subject") or "(sans objet)"))
-    return {"non_lus": non_lus, "derniers": derniers}
+    return {"non_lus": non_lus, "nouveaux": len(nouveaux), "derniers": derniers}
 
 
 _mails = {"t": 0, "val": None}
@@ -1484,14 +1542,17 @@ def etat_mails(rafraichir=True):
 
 
 def phrase_mails(etat):
-    """« Vous avez 3 mails non lus, dont le dernier de Marie Dupont » (ou None si rien à dire)."""
+    """« Vous avez 3 nouveaux mails, dont le dernier de Marie Dupont » (ou None si rien à dire).
+    Nouveaux = non lus arrivés depuis le dernier lancement de Runner."""
     boites = [b for b in etat.values() if isinstance(b, dict)]
     if not boites:
         return None
-    n = sum(b["non_lus"] for b in boites)
+    n = sum(b.get("nouveaux", 0) for b in boites)
     if n == 0:
-        return "Aucun mail non lu"
-    phrase = f"Vous avez {n} mail{'s' if n > 1 else ''} non lu{'s' if n > 1 else ''}"
+        return "Aucun nouveau mail"
+    if n > MAX_NOUVEAUX:
+        return f"Vous avez plus de {MAX_NOUVEAUX} nouveaux mails"
+    phrase = f"Vous avez {n} nouveau{'x' if n > 1 else ''} mail{'s' if n > 1 else ''}"
     dernier = next((b["derniers"][0][0] for b in boites if b["derniers"]), "")
     if dernier:
         phrase += f", dont le dernier de {dernier}" if n > 1 else f", de {dernier}"
@@ -1518,7 +1579,9 @@ PARTIES = ["accueil", "heure", "meteo", "cours", "mails", "fin"]
 
 def texte_phrase(m=False, apercu=False, rafraichir=True):
     """Assemble les parties actives. Variables : {heure} ; {temperature} {ciel} {ville} ;
-    {cours} {heure_cours} {salle} ; {mails} {nb_mails}. Une partie dont l'information manque
+    {cours} {heure_cours} {salle} ; {nb_mails} {expediteur} {objet} (et {mails}, la phrase
+    toute faite). Pour les mails, le modèle dépend du nombre de nouveaux mails (plusieurs, un, aucun).
+    Une partie dont l'information manque
     (pas de météo, plus de cours aujourd'hui, mails non configurés) est sautée.
     'm' : météo imposée ; 'apercu' : sans connexion, avec des exemples si besoin ;
     'rafraichir' False : agenda et mails déjà en mémoire (au lancement, pour ne pas attendre)."""
@@ -1536,17 +1599,24 @@ def texte_phrase(m=False, apercu=False, rafraichir=True):
     if cours:
         debut, _, titre, lieu = cours[0]
         infos.update(cours=titre, heure_cours=dire_heure(debut), salle=f", en {lieu}" if lieu else "")
-    mails = phrase_mails(etat_mails(rafraichir=not apercu and (rafraichir or _mails["val"] is None)))
+    boites = etat_mails(rafraichir=not apercu and (rafraichir or _mails["val"] is None))
+    mails = phrase_mails(boites)
+    nb = sum(b.get("nouveaux", 0) for b in boites.values() if isinstance(b, dict))
+    dernier = next((b["derniers"][0] for b in boites.values() if isinstance(b, dict) and b["derniers"]), ("", ""))
     if apercu and mails is None:
-        mails = "Vous avez 3 mails non lus, dont le dernier de la scolarité"
+        mails, nb, dernier = "Vous avez 3 nouveaux mails, dont le dernier de la scolarité", 3, ("la scolarité", "Réunion")
     if mails:
-        infos.update(mails=mails, nb_mails=re.sub(r"\D", "", mails) or "0")
+        infos.update(mails=mails, nb=nb, expediteur=dernier[0] or "quelqu'un", objet=dernier[1],
+                     nb_mails=f"plus de {MAX_NOUVEAUX}" if nb > MAX_NOUVEAUX else str(nb))
     besoin = {"meteo": "temperature", "cours": "cours", "mails": "mails"}
     morceaux = []
     for nom in PARTIES:
         p = v["parties"].get(nom, {})
-        if p.get("actif") and p.get("texte", "").strip() and besoin.get(nom, "heure") in infos:
-            morceaux.append(p["texte"].strip().format_map(
+        texte = p.get("texte", "")
+        if nom == "mails" and "nb" in infos:      # phrase selon le nombre de nouveaux mails
+            texte = {0: p.get("aucun", ""), 1: p.get("un") or texte}.get(infos["nb"], texte)
+        if p.get("actif") and texte.strip() and besoin.get(nom, "heure") in infos:
+            morceaux.append(texte.strip().format_map(
                 type("D", (dict,), {"__missing__": lambda s, k: ""})(infos)))
     return " ".join(morceaux)
 
@@ -1666,6 +1736,7 @@ def preparer_secours():
 
 
 def _preparer_secours():
+    """Synthétise la phrase de secours si elle a changé (voix neurale si possible)."""
     texte = texte_secours()
     cle = json.dumps([texte, CFG["voix"]["voix"]], ensure_ascii=False)
     deja = _deja_pret(_secours["cle"], cle)
@@ -1791,7 +1862,8 @@ DOSSIER_DEMARRAGE = os.path.join(os.environ.get("APPDATA", ""), r"Microsoft\Wind
 RACCOURCI_DEMARRAGE = os.path.join(DOSSIER_DEMARRAGE, "Runner.lnk")
 
 
-RACCOURCI_BUREAU = "Runner - réglages.lnk"
+RACCOURCI_BUREAU = "Runner.lnk"            # ouvre la fenêtre de réglages
+ICONE = os.path.join(DOSSIER, "runner.ico")              # logo de Runner (raccourcis et fenêtres)
 
 
 def lanceur_python():
@@ -1831,6 +1903,8 @@ def raccourcis_a_jour(bureau):
 
 
 def etat_raccourcis():
+    """État des raccourcis (lanceur Python, dossier, date des raccourcis Démarrage et Bureau, logo) :
+    sert à savoir s'ils doivent être refaits."""
     def date(p):
         return os.path.getmtime(p) if os.path.exists(p) else None
     try:
@@ -1838,7 +1912,7 @@ def etat_raccourcis():
     except OSError:
         lnk_bureau = ""
     return {"lanceur": lanceur_python(), "dossier": DOSSIER, "demarrage": date(RACCOURCI_DEMARRAGE),
-            "bureau": date(lnk_bureau) if lnk_bureau else None}
+            "bureau": date(lnk_bureau) if lnk_bureau else None, "icone": os.path.exists(ICONE)}
 
 
 def reparer_raccourcis(demarrage=None, bureau=False):
@@ -1855,19 +1929,22 @@ def reparer_raccourcis(demarrage=None, bureau=False):
     ps = ["$w = New-Object -ComObject WScript.Shell"]
     for dossier, nom, script, creer in raccourcis:
         script, cible = os.path.join(DOSSIER, script), ps_texte(lanceur)
+        icone = ps_texte(ICONE + ",0" if os.path.exists(ICONE) else "")
         ps.append(
             f"$l = Join-Path ([Environment]::GetFolderPath('{dossier}')) {ps_texte(nom)};"
             f"if ((Test-Path -LiteralPath $l) -or ${str(creer).lower()}) {{"
             f"  $s = $w.CreateShortcut($l); $a = {ps_texte(chr(34) + script + chr(34))};"
-            f"  if ($s.TargetPath -ne {cible} -or $s.Arguments -ne $a -or -not (Test-Path -LiteralPath $s.TargetPath)) {{"
+            f"  if ($s.TargetPath -ne {cible} -or $s.Arguments -ne $a -or ({icone} -and $s.IconLocation -ne {icone})"
+            f"      -or -not (Test-Path -LiteralPath $s.TargetPath)) {{"
             f"    $s.TargetPath = {cible}; $s.Arguments = $a; $s.WorkingDirectory = {ps_texte(DOSSIER)};"
-            f"    $s.Save(); 'REPARE:{nom.replace('é', 'e')}' }} }}")
+            f"    if ({icone}) {{ $s.IconLocation = {icone} }};"
+            f"    $s.Save(); 'REPARE:{dossier}' }} }}")
     try:
         r = powershell("\n".join(ps))
         for ligne in r.stdout.splitlines():           # (sortie sans accents : encodage de la console)
             if ligne.startswith("REPARE:"):
-                nom = RACCOURCI_BUREAU if "reglages" in ligne else "Runner.lnk"
-                print(f"Raccourci réparé ou créé : {nom}")
+                ou = "du Bureau" if "Desktop" in ligne else "du Démarrage"
+                print(f"Raccourci {ou} réparé ou créé")
         with open(FICHIER_RACCOURCIS, "w", encoding="utf-8") as f:
             json.dump(etat_raccourcis(), f)
     except Exception as e:
@@ -1909,13 +1986,15 @@ def regler_demarrage_session(actif):
 
 
 def migrer_ancien_nom():
-    """L'assistant s'appelait Jarvis : son journal et ses raccourcis sont renommés (instantané,
+    """L'assistant s'appelait Jarvis, et le raccourci du Bureau « Runner - réglages » : journal et
+    raccourcis sont renommés (instantané,
     sans PowerShell ; les raccourcis pointent toujours vers les mêmes scripts)."""
     renommages = [("jarvis.log", FICHIER_LOG), ("jarvis.ancien.log", os.path.join(DOSSIER, "runner.ancien.log")),
                   (os.path.join(DOSSIER_DEMARRAGE, "Jarvis.lnk"), RACCOURCI_DEMARRAGE)]
     try:
         bureau = dossier_bureau()
-        renommages.append((os.path.join(bureau, "Jarvis - réglages.lnk"), os.path.join(bureau, RACCOURCI_BUREAU)))
+        for ancien in ("Jarvis - réglages.lnk", "Runner - réglages.lnk"):
+            renommages.append((os.path.join(bureau, ancien), os.path.join(bureau, RACCOURCI_BUREAU)))
     except OSError:
         pass
     for ancien, nouveau in renommages:
@@ -2006,6 +2085,7 @@ def fenetres():
 
 
 def placer(h, app):
+    """Place la fenêtre 'h' dans sa zone d'écran (en compensant les bordures invisibles de Windows)."""
     g, t, d, b = zone_ecran(app["ecran"])
     f0, f1 = ZONES[app["zone"]]
     l, r = g + round((d - g) * f0), g + round((d - g) * f1)
@@ -2078,6 +2158,7 @@ def fenetre_navigateur(nom, actuelles):
 
 
 def retenir_fenetre(nom, hwnd):
+    """Mémorise la fenêtre ouverte pour cette appli : au lancement suivant, elle est réutilisée."""
     try:
         with open(FICHIER_FENETRES, encoding="utf-8") as f:
             d = json.load(f)
@@ -2192,6 +2273,8 @@ def lancer_et_placer_apps():
 
 
 def lancer_tout():
+    """Lancement complet (musique, LED, voix, applis). Le fichier « en cours » permet à la
+    fenêtre de réglages d'afficher Stop ; il est toujours retiré à la fin, même en cas d'erreur."""
     mu = CFG["musique"]
     if os.path.exists(FICHIER_STOP):
         os.remove(FICHIER_STOP)
@@ -2210,6 +2293,8 @@ def lancer_tout():
 
 
 def _lancer_tout(mu):
+    """Corps du lancement : musique et LED en parallèle, phrase dite par-dessus la musique
+    baissée, applis (et onglets des webmails) ouvertes et placées, puis récap à l'écran."""
     musique = chemin_musique(mu["fichier"])
     if musique and CFG["leds"]["active"] and CFG["leds"].get("rythme", {}).get("actif") \
             and etat_prechargement(musique) != "pret":
@@ -2300,6 +2385,7 @@ def _lancer_tout(mu):
             ouvrir_recap()
         except Exception as e:
             print(f"Récapitulatif impossible : {e}")
+    noter_lancement()                            # les mails déjà annoncés ne sont plus « nouveaux »
     if fil_leds:
         fil_leds.join(30)
     voix.join(60)
@@ -2388,6 +2474,8 @@ def micros_dispo():
 
 
 def choisir_micro():
+    """Index du micro choisi (None : micro par défaut de Windows). Les pilotes sont essayés
+    dans l'ordre MME, DirectSound puis WASAPI, le premier qui accepte 16 kHz est gardé."""
     nom = CFG["micro"]
     if not nom:
         return None
@@ -2413,10 +2501,17 @@ def mesures(env, brut, k):
     return attaque, decroiss, brillance(np.concatenate([brut[k + j] for j in range(-1, 4)]))
 
 
+_SPECTRE = {}                                    # longueur -> (fenêtre, aigus, tout sauf graves)
+
+
 def brillance(x):
-    spectre = np.abs(np.fft.rfft(x * np.hanning(len(x)))) ** 2
-    freqs = np.fft.rfftfreq(len(x), 1 / TAUX)
-    return spectre[freqs > 1500].sum() / (spectre[freqs > 100].sum() + 1e-12)
+    """Part d'énergie au-dessus de 1,5 kHz (un clap est riche en aigus, une voix beaucoup moins)."""
+    if len(x) not in _SPECTRE:
+        freqs = np.fft.rfftfreq(len(x), 1 / TAUX)
+        _SPECTRE[len(x)] = (np.hanning(len(x)), freqs > 1500, freqs > 100)
+    fenetre, aigus, utile = _SPECTRE[len(x)]
+    spectre = np.abs(np.fft.rfft(x * fenetre)) ** 2
+    return spectre[aigus].sum() / (spectre[utile].sum() + 1e-12)
 
 
 def attendre_double_clap():

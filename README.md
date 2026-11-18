@@ -1,6 +1,8 @@
+<p align="center"><img src="logo.png" width="140" alt="Logo de Runner"></p>
+
 # Runner
 
-**Tape deux fois dans tes mains, et ton poste se prépare tout seul.** Ta musique démarre, tes LED s'allument (et peuvent clignoter au rythme de la musique). Une voix te donne l'heure, la météo, ton prochain cours et tes mails non lus, et tes apps s'ouvrent, chacune placée au bon endroit sur tes écrans.
+**Tape deux fois dans tes mains, et ton poste se prépare tout seul.** Ta musique démarre, tes LED s'allument (et peuvent clignoter au rythme de la musique). Une voix te donne l'heure, la météo, ton prochain cours et tes nouveaux mails, et tes apps s'ouvrent, chacune placée au bon endroit sur tes écrans.
 
 Pas besoin de taper dans tes mains ? Un raccourci clavier (**Ctrl + Alt + R**) fait la même chose.
 
@@ -31,7 +33,7 @@ Si `pip` n'est pas reconnu, utilise `python -m pip install -U sounddevice numpy 
 cd C:\Runner
 python clap_config.py
 ```
-Un raccourci **« Runner - réglages »** est créé sur le Bureau pour les fois suivantes.
+Un raccourci **« Runner »** est créé sur le Bureau pour les fois suivantes.
 
 **Vérifier que tout est installé :**
 ```
@@ -58,7 +60,7 @@ python -c "import tkinter, sounddevice, numpy, soundfile, edge_tts; print('Tout 
 |---|---|
 | Lancer Runner | Double clap, ou **Ctrl + Alt + R** (modifiable dans Système) |
 | Arrêter la musique | Touche Lecture/Pause ou Stop du clavier, **Ctrl + Alt + M**, ou le bouton Stop de la fenêtre |
-| Changer un réglage | Raccourci « Runner - réglages » du Bureau, puis **Enregistrer** |
+| Changer un réglage | Raccourci « Runner » du Bureau, puis **Enregistrer** |
 | Voir ce qui s'est passé | Page **Journal** de la fenêtre |
 
 Runner écoute le micro 10 min après l'ouverture de session (ou la sortie de veille), puis le ferme. Le raccourci clavier reste disponible ensuite.
@@ -85,6 +87,8 @@ Runner écoute le micro 10 min après l'ouverture de session (ou la sortie de ve
 |---|---|
 | `clap_launcher.py` | Le programme : écoute, détection, lancement. |
 | `clap_config.py` | La fenêtre de réglages. |
+| `runner.ico` | Le logo : icône des raccourcis et des fenêtres. |
+| `logo.png`, `logo.svg` | Le logo en image (README) et en version modifiable. |
 | `config.json` | Tes réglages (créé au premier enregistrement). Il contient des informations personnelles : ne le partage pas. |
 | `runner.log` | Le journal. |
 | `musiques\` | Tes musiques (mp3, wav, wma, m4a). |

@@ -94,8 +94,10 @@ L'intensité passe par la luminosité : les Govee ignorent une couleur « assomb
 | Heure | `Il est {heure}.` | `{heure}` (« 14 heures 5 », « midi ») |
 | Météo | `Il fait {temperature} degrés à {ville}, avec {ciel}.` | `{temperature}`, `{ciel}`, `{ville}` |
 | Cours | `Votre prochain cours, {cours}, commence à {heure_cours}{salle}.` | `{cours}`, `{heure_cours}`, `{salle}` (« , en Amphi B ») |
-| Mails | `{mails}.` | `{mails}` (« Vous avez 3 mails non lus, dont le dernier de… »), `{nb_mails}` |
+| Mails | `Vous avez {nb_mails} nouveaux mails, dont le dernier de {expediteur}.` | `{nb_mails}` (« 3 », « plus de 50 »), `{expediteur}`, `{objet}` (du dernier nouveau mail) |
 | Fin | `Votre espace de travail est prêt.` | — |
+
+**La partie Mails a trois phrases**, réglables avec le bouton « Autres cas… » : une quand il y a **plusieurs** nouveaux mails (celle de la ligne), une pour **un seul** (`Vous avez un nouveau mail, de {expediteur}.`) et une pour **aucun** (`Aucun nouveau mail.` ; vide = rien n'est dit).
 
 **Une partie est sautée** si elle est décochée ou vide, ou si son information manque : pas de météo, plus de cours aujourd'hui, mails non configurés. L'aperçu sous les parties montre la phrase complète (avec des exemples si besoin).
 
@@ -120,13 +122,14 @@ Le calendrier est relu au plus toutes les 30 min. Sans connexion, la dernière v
 
 | Réglage | Rôle |
 |---|---|
-| **Annoncer les mails non lus** (`infos.mails.actif`) | Active la partie « Mails » de la phrase et du récap. |
-| **Comptes** (`infos.mails.comptes`) | Une ligne par boîte. **Gmail** : bouton « Se connecter avec Google ». **Autres boîtes** : adresse, serveur IMAP et mot de passe. Pour toutes : un nom et l'adresse du webmail. Boutons « + Gmail », « + ENSMA », « + Autre compte ». |
-| **Ouvrir le webmail au lancement** (`infos.ouvrir_webmail`) | Ajoute l'onglet du webmail dans le premier navigateur de la page Apps. |
-| **Afficher le récap à l'écran** (`infos.recap`) | Petite fenêtre en haut à droite : cours restants de la journée, et les 5 derniers mails non lus de chaque boîte (expéditeur et objet), avec un bouton pour ouvrir chaque webmail. |
+| **Annoncer les nouveaux mails** (`infos.mails.actif`) | Active la partie « Mails » de la phrase et du récap. |
+| **Comptes** (`infos.mails.comptes`) | Une ligne par boîte. **Gmail** : bouton « Se connecter avec Google ». **Autres boîtes** : adresse, serveur IMAP et mot de passe ; une fois le mot de passe enregistré, la case laisse la place à un bouton « Déconnecter », qui l'efface. Pour toutes : un nom et l'adresse du webmail. Boutons « + Gmail » et « + Autre boîte mail ». |
+| **Ouvrir les webmails au lancement** (`infos.ouvrir_webmail`) | Ajoute l'onglet de chaque webmail dans le premier navigateur de la page Apps. |
+| **Afficher le récap à l'écran** (`infos.recap`) | Petite fenêtre en haut à droite : cours restants de la journée, et pour chaque boîte le nombre de nouveaux mails (et, en petit, le total des non lus), les 5 derniers nouveaux (expéditeur et objet), et un bouton pour ouvrir le webmail. |
 
-- **Lecture seule :** Runner compte les mails non lus de la boîte de réception, sans rien marquer comme lu. Les boîtes sont relues au plus toutes les 5 min.
-- **Sécurité :** mots de passe et connexions Google sont gardés par Windows, dans le Gestionnaire d'identification (chiffrés, liés à ta session Windows). Ils ne sont **jamais** écrits dans `config.json`.
+- **Nouveaux mails :** les mails non lus de la boîte de réception arrivés **depuis le dernier lancement de Runner** (au plus 7 jours ; les dernières 24 h au tout premier lancement). Le total des non lus, souvent des milliers, n'est pas annoncé. Au-delà de 50, Runner dit « plus de 50 nouveaux mails ».
+- **Lecture seule :** rien n'est marqué comme lu. Les boîtes sont relues au plus toutes les 5 min.
+- **Sécurité :** mots de passe et connexions Google sont gardés par Windows, dans le Gestionnaire d'identification (chiffrés, liés à ta session Windows). Ils ne sont **jamais** écrits dans `config.json`. Ils apparaissent dans *Panneau de configuration › Gestionnaire d'identification › Informations d'identification Windows* sous le nom `Runner:…`. Supprimer un compte avec ✕ les efface aussi (et retire l'autorisation chez Google pour Gmail).
 
 #### Gmail : « Se connecter avec Google »
 
@@ -143,9 +146,9 @@ Runner utilise la connexion officielle de Google (OAuth). Tu te connectes une fo
 
 **Pour des amis :** donne-leur ton `google_client.json`, ou laisse chacun créer le sien. Une app non validée par Google accepte au plus 100 personnes en tout.
 
-#### Autres boîtes (ENSMA, Outlook…) : IMAP
+#### Autres boîtes (école, Outlook, fournisseur d'accès…) : IMAP
 
-Il faut l'adresse du **serveur IMAP** de la messagerie. Elle est indiquée dans l'aide de ta messagerie, à la rubrique « configurer un client mail », « Thunderbird » ou « IMAP ». Le mot de passe tapé est enregistré dans Windows au clic sur « Enregistrer » (« ✓ enregistré »). Certaines écoles bloquent IMAP (souvent avec Microsoft 365) : dans ce cas, garde seulement l'ouverture du webmail.
+Il faut l'adresse du **serveur IMAP** de la messagerie. Elle est indiquée dans l'aide de ta messagerie, à la rubrique « configurer un client mail », « Thunderbird » ou « IMAP ». Le mot de passe tapé est enregistré dans Windows au clic sur « Enregistrer » ; la case est alors remplacée par le bouton « Déconnecter ». Certaines écoles bloquent IMAP (souvent avec Microsoft 365) : dans ce cas, garde seulement l'ouverture du webmail.
 
 ---
 

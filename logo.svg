@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect id="Fond" width="1024" height="1024" rx="230" fill="#181817"/>
+  <g id="Symbole" transform="translate(512 512) scale(7.2) translate(-50 -50)" fill="none" stroke="#d97757" stroke-linecap="round" stroke-linejoin="round">
+    <path id="R" d="M40 82 V18 H60 A17 17 0 0 1 60 52 H40 M56 52 L84 84" stroke-width="10"/>
+    <path id="Vitesse" d="M10 34 H26 M16 50 H28 M10 66 H26" stroke-width="6"/>
+  </g>
+</svg>

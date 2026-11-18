@@ -8,7 +8,7 @@ Runner est un logiciel libre qui s'exécute **uniquement sur ton ordinateur** (W
 
 Si tu choisis « Se connecter avec Google », Runner demande une seule autorisation : **la lecture de tes mails** (`https://www.googleapis.com/auth/gmail.readonly`).
 
-- **Ce qui est lu :** le nombre de mails non lus de ta boîte de réception, ainsi que l'expéditeur et l'objet des 5 derniers mails non lus. Le contenu des mails n'est jamais lu.
+- **Ce qui est lu :** le nombre de mails non lus de ta boîte de réception, le nombre de ceux arrivés depuis le dernier lancement de Runner, ainsi que l'expéditeur et l'objet des 5 plus récents d'entre eux. Le contenu des mails n'est jamais lu.
 - **À quoi ça sert :** uniquement à t'annoncer ces informations au lancement de Runner (phrase dite à voix haute et petite fenêtre récapitulative sur ton écran).
 - **Ce qui n'est jamais fait :** Runner n'envoie, ne modifie, ne supprime et ne marque comme lu aucun mail.
 - **Conservation :**
@@ -34,4 +34,4 @@ L'utilisation des informations reçues des API Google respecte le [Règlement su
 
 ## Contact
 
-Pour toute question : runner.assistant@gmail.com
+Pour toute question : runner.assistant@gmail.com.

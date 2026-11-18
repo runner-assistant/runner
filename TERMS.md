@@ -9,4 +9,4 @@
 5. **Contenus.** Les musiques que tu ajoutes restent soumises à leurs propres droits d'auteur.
 6. **Confidentialité.** Voir la [politique de confidentialité](PRIVACY.md).
 
-Contact : runner.assistant@gmail.com
+Contact : runner.assistant@gmail.com.

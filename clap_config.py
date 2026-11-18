@@ -1,7 +1,7 @@
 """
 clap_config.py - Fenêtre de réglage de clap_launcher.py (écrit config.json).
 
-Lancer :  pythonw clap_config.py   (ou le raccourci « Runner - réglages » du Bureau,
+Lancer :  pythonw clap_config.py   (ou le raccourci « Runner » du Bureau,
           créé automatiquement à la première ouverture)
 Les fichiers audio proposés sont ceux du dossier du script et de son sous-dossier « musiques ».
 """
@@ -54,18 +54,58 @@ SORTIE_AUTO = "Auto (sortie Windows actuelle)"
 PYTHON = os.path.join(os.path.dirname(sys.executable), "python.exe")
 if not os.path.exists(PYTHON):
     PYTHON = sys.executable
+try:                                             # barre des tâches : logo de Runner, pas celui de Python
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Runner.Reglages")
+except (AttributeError, OSError):
+    pass
 
 
 # Thème sombre (nuances de gris, accent orangé discret)
-FOND, SURFACE, CHAMP, BORDURE = "#1f1e1d", "#262624", "#30302e", "#45443f"
-FONCE = "#4a4944"                        # contour des champs, menus et boutons
-TEXTE, DISCRET, ACCENT = "#ecebe6", "#9c9a92", "#d97757"
-ETEINT = "#65635d"                       # réglage grisé (sans effet dans le mode choisi)
+FOND, SURFACE, CHAMP, BORDURE = "#181817", "#212120", "#2a2a29", "#393938"
+PAGE = "#1b1b1a"                         # fond des pages ; les sections sont des cartes SURFACE
+BORD_CARTE = "#313130"                   # bordure fine des cartes
+FONCE = "#30302f"                        # contour des champs et menus
+BOUTON, BOUTON_SURVOL = "#2a2a29", "#353534"   # boutons (sans bordure) : fond, survol
+TEXTE, DISCRET, ACCENT = "#ecebe9", "#9c9c9b", "#d97757"
+ETEINT = "#646463"                       # réglage grisé (sans effet dans le mode choisi)
 POLICE = ("Segoe UI", 12)
 
 
+def image_arrondie(racine, fond, sur, largeur=120, hauteur=30, rayon=7):
+    """Rectangle arrondi aux bords lisses, ENTIÈREMENT OPAQUE : les coins sont mélangés une fois pour
+    toutes avec 'sur', la couleur sur laquelle le bouton est posé. Une image opaque s'affiche
+    instantanément (une image semi-transparente ralentissait toute la fenêtre). Large, pour que ttk
+    l'étire en peu de morceaux."""
+    f, b = cl.hex_rgb(fond), cl.hex_rgb(sur)
+    n = 6                                         # sur-échantillonnage des coins seulement
+
+    def couverture(x, y):
+        cx = min(max(x, rayon), largeur - rayon)
+        cy = min(max(y, rayon), hauteur - rayon)
+        return (x - cx) ** 2 + (y - cy) ** 2 <= rayon * rayon
+
+    plein = "#%02x%02x%02x" % f
+    lignes = []
+    for y in range(hauteur):
+        ligne = []
+        coin_y = y < rayon or y >= hauteur - rayon
+        for x in range(largeur):
+            if coin_y and (x < rayon or x >= largeur - rayon):
+                c = sum(couverture(x + (i + .5) / n, y + (j + .5) / n) for i in range(n) for j in range(n)) / n ** 2
+                ligne.append("#%02x%02x%02x" % tuple(round(fc * c + bc * (1 - c)) for fc, bc in zip(f, b)))
+            else:
+                ligne.append(plein)
+        lignes.append("{" + " ".join(ligne) + "}")
+    img = tk.PhotoImage(master=racine, width=largeur, height=hauteur)
+    img.put(" ".join(lignes))
+    return img
+
+
 def appliquer_theme(racine):
-    racine.configure(bg=FOND)
+    """Thème sombre de toute la fenêtre : styles ttk, images arrondies des boutons et du menu de
+    gauche, champs et listes des menus déroulants. Les images sont gardées sur 'racine' (sinon
+    Python les libère et elles disparaissent de l'écran)."""
+    racine.configure(bg=PAGE)
     racine.option_add("*Font", POLICE)
     racine.option_add("*TCombobox*Listbox.background", CHAMP)
     racine.option_add("*TCombobox*Listbox.foreground", TEXTE)
@@ -79,20 +119,36 @@ def appliquer_theme(racine):
                  lightcolor=CHAMP, darkcolor=CHAMP, troughcolor=CHAMP, focuscolor=SURFACE,
                  fieldbackground=CHAMP, selectbackground=BORDURE, selectforeground=TEXTE,
                  insertcolor=TEXTE, arrowcolor=DISCRET)
-    st.configure("Fond.TFrame", background=FOND)
-    st.configure("Fond.TLabel", background=FOND, foreground=DISCRET)
+    st.configure("Fond.TFrame", background=PAGE)
+    st.configure("Fond.TLabel", background=PAGE, foreground=DISCRET)
     st.configure("Discret.TLabel", foreground=DISCRET)
     st.configure("Titre.TLabel", foreground=DISCRET, font=(POLICE[0], 11))
+    st.configure("Page.TFrame", background=PAGE)
+    st.configure("Carte.TLabel", foreground=TEXTE, font=(POLICE[0], 14, "bold"))
 
-    st.configure("TButton", background=CHAMP, padding=(16, 8), borderwidth=1, relief="flat",
-                 bordercolor=FONCE, lightcolor=CHAMP, darkcolor=CHAMP)
-    st.map("TButton", background=[("pressed", FOND), ("active", BORDURE)],
-           foreground=[("disabled", ETEINT)],
-           lightcolor=[("active", BORDURE)], darkcolor=[("active", BORDURE)])
-    st.configure("Accent.TButton", background=ACCENT, foreground=FOND, bordercolor=ACCENT,
-                 lightcolor=ACCENT, darkcolor=ACCENT)
-    st.map("Accent.TButton", background=[("pressed", "#b85f42"), ("active", "#e08a6d")],
-           lightcolor=[("active", "#e08a6d")], darkcolor=[("active", "#e08a6d")])
+    # Boutons : rectangle aux bords arrondis dessiné en image (normal, survol, appui, grisé),
+    # bordure très fine gris foncé. Les boutons du menu de gauche gardent le style plat d'origine.
+    # Sans bordure ; au survol, le fond s'éclaircit un peu. Une série d'images par fond sur lequel
+    # les boutons sont posés : cartes (TButton), barre du bas (Barre.*), bulles (Bulle.*).
+    racine._boutons = []
+    for prefixe, sur in (("", SURFACE), ("Barre", PAGE), ("Bulle", CHAMP)):
+        img = {cle: image_arrondie(racine, fond, sur) for cle, fond in {
+            "normal": BOUTON, "survol": BOUTON_SURVOL, "appui": SURFACE, "grise": SURFACE,
+            "accent": ACCENT, "accent_survol": "#e3896b", "accent_appui": "#c76a4d"}.items()}
+        racine._boutons.append(img)
+        st.element_create(f"{prefixe}Arrondi.fond", "image", img["normal"], ("disabled", img["grise"]),
+                          ("pressed", img["appui"]), ("active", img["survol"]), border=9, sticky="nsew")
+        st.element_create(f"{prefixe}ArrondiAccent.fond", "image", img["accent"], ("disabled", img["grise"]),
+                          ("pressed", img["accent_appui"]), ("active", img["accent_survol"]),
+                          border=9, sticky="nsew")
+        normal = f"{prefixe}.TButton" if prefixe else "TButton"
+        accent = f"{prefixe}Accent.TButton" if prefixe else "Accent.TButton"
+        for style, element in ((normal, f"{prefixe}Arrondi.fond"), (accent, f"{prefixe}ArrondiAccent.fond")):
+            st.layout(style, [(element, {"sticky": "nsew", "children": [
+                ("Button.padding", {"sticky": "nsew", "children": [("Button.label", {"sticky": "nsew"})]})]})])
+            st.configure(style, padding=(12, 4), anchor="center", font=(POLICE[0], 11),
+                         foreground=FOND if style == accent else TEXTE)
+            st.map(style, foreground=[("disabled", ETEINT)])
     for w in ("TEntry", "TSpinbox"):
         st.configure(w, padding=6, relief="flat", bordercolor=FONCE, lightcolor=CHAMP, darkcolor=CHAMP)
         st.map(w, bordercolor=[("focus", FONCE)], lightcolor=[("focus", CHAMP)],
@@ -108,7 +164,17 @@ def appliquer_theme(racine):
                 fleche.put(DISCRET, (x, y + dy))
     racine._fleche = fleche
     st.element_create("Plat.fleche", "image", fleche, sticky="", padding=(6, 0, 12, 0))
-    st.layout("TCombobox", [("Combobox.field", {"sticky": "nswe", "children": [
+    # Champ dessiné par une image unie (assez grande pour n'être collée qu'une fois) : le champ
+    # du thème « clam » ajoutait des pixels clairs aux coins. La bordure fine vient du cadre de
+    # MenuDeroulant.
+    def uni(couleur):
+        img = tk.PhotoImage(master=racine, width=700, height=60)
+        img.put(couleur, to=(0, 0, 700, 60))
+        return img
+    racine._champs = champ = {"normal": uni(CHAMP), "grise": uni(SURFACE)}
+    st.element_create("Champ.fond", "image", champ["normal"], ("disabled", champ["grise"]),
+                      border=0, width=1, height=1, sticky="nsew")   # taille dictée par le texte, pas par l'image
+    st.layout("TCombobox", [("Champ.fond", {"sticky": "nswe", "children": [
         ("Plat.fleche", {"side": "right", "sticky": ""}),
         ("Combobox.padding", {"expand": "1", "sticky": "nswe", "children": [
             ("Combobox.textarea", {"sticky": "nswe"})]})]})])
@@ -116,21 +182,61 @@ def appliquer_theme(racine):
                  lightcolor=CHAMP, darkcolor=CHAMP)
     st.map("TCombobox", fieldbackground=[("disabled", SURFACE), ("readonly", CHAMP)],
            foreground=[("disabled", ETEINT), ("readonly", TEXTE)],
-           bordercolor=[("focus", CHAMP)], lightcolor=[("focus", CHAMP)], darkcolor=[("focus", CHAMP)])
+           bordercolor=[("disabled", SURFACE), ("focus", CHAMP)],
+           lightcolor=[("disabled", SURFACE), ("focus", CHAMP)],
+           darkcolor=[("disabled", SURFACE), ("focus", CHAMP)])
+    # Liste déroulante : cadre sombre (au lieu du gris clair par défaut, visible dans les coins)
+    st.configure("ComboboxPopdownFrame", background=CHAMP, bordercolor=FONCE, lightcolor=CHAMP,
+                 darkcolor=CHAMP, relief="solid", borderwidth=1)
+    racine.option_add("*TCombobox*Listbox.highlightThickness", 0)
+    racine.option_add("*TCombobox*Listbox.relief", "flat")
+    racine.option_add("*TCombobox*Listbox.selectBorderWidth", 0)     # pas de relief clair sur la sélection
+    racine.option_add("*TCombobox*Listbox.activeStyle", "none")
     st.configure("TSeparator", background=BORDURE)
     st.configure("Vertical.TScrollbar", background=CHAMP, troughcolor=CHAMP, bordercolor=CHAMP,
                  lightcolor=CHAMP, darkcolor=CHAMP, arrowcolor=DISCRET, gripcount=0)
     st.map("Vertical.TScrollbar", background=[("active", BORDURE)])
 
-    st.configure("Nav.TFrame", background=FOND)
-    st.configure("Nav.TButton", background=FOND, foreground=DISCRET, anchor="w", padding=(18, 11),
-                 borderwidth=0, bordercolor=FOND, lightcolor=FOND, darkcolor=FOND, font=(POLICE[0], 13))
-    st.map("Nav.TButton", background=[("active", CHAMP)], foreground=[("active", TEXTE)],
-           lightcolor=[("active", CHAMP)], darkcolor=[("active", CHAMP)])
-    st.configure("NavSel.TButton", background=SURFACE, foreground=TEXTE, anchor="w", padding=(18, 11),
-                 borderwidth=0, bordercolor=SURFACE, lightcolor=SURFACE, darkcolor=SURFACE,
-                 font=(POLICE[0], 13))
-    st.map("NavSel.TButton", background=[("active", SURFACE)])
+    # Menu de gauche : même gris que les cartes ; survol et page choisie en bande pleine largeur,
+    # sans bordure ni cadre de focus (fonds unis dessinés par image)
+    st.configure("Nav.TFrame", background=SURFACE)
+
+    # Boîtes arrondies (images opaques assez grandes : peu de morceaux à dessiner)
+    racine._nav = nav = {cle: image_arrondie(racine, couleur, SURFACE, 200, 44, 8) for cle, couleur in
+                         {"normal": SURFACE, "survol": CHAMP, "choisi": BOUTON_SURVOL}.items()}
+    st.element_create("Nav.fond", "image", nav["normal"], ("active", nav["survol"]), border=10, sticky="nsew")
+    st.element_create("NavSel.fond", "image", nav["choisi"], border=10, sticky="nsew")
+    for style, element in (("Nav.TButton", "Nav.fond"), ("NavSel.TButton", "NavSel.fond")):
+        st.layout(style, [(element, {"sticky": "nsew", "children": [
+            ("Button.padding", {"sticky": "nsew", "children": [("Button.label", {"sticky": "w"})]})]})])
+        st.configure(style, anchor="w", padding=(18, 11), font=(POLICE[0], 12))
+    st.configure("Nav.TButton", foreground=DISCRET)
+    st.map("Nav.TButton", foreground=[("active", TEXTE)])
+    st.configure("NavSel.TButton", foreground=TEXTE)
+
+
+_ICONES = []                                     # icônes Windows chargées (gardées en vie)
+
+
+def icone_nette(fenetre):
+    """Logo de la barre de titre et de la barre des tâches chargé par Windows à la taille exacte
+    voulue (Tk agrandit une petite image, d'où un logo pixelisé)."""
+    if not os.path.exists(cl.ICONE):
+        return
+    try:
+        u32 = ctypes.windll.user32
+        u32.LoadImageW.restype = ctypes.c_void_p
+        u32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_void_p]
+        fenetre.update_idletasks()
+        hwnd = u32.GetParent(fenetre.winfo_id())
+        for type_icone, metrique in ((0, 49), (1, 11)):     # petite (titre) : SM_CXSMICON ; grande : SM_CXICON
+            t = u32.GetSystemMetrics(metrique)
+            h = u32.LoadImageW(None, cl.ICONE, 1, t, t, 0x10)  # IMAGE_ICON, LR_LOADFROMFILE
+            if h:
+                _ICONES.append(h)
+                u32.SendMessageW(hwnd, 0x80, type_icone, h)     # WM_SETICON
+    except Exception:
+        pass
 
 
 def barre_titre_sombre(racine):
@@ -141,11 +247,11 @@ def barre_titre_sombre(racine):
         regler = ctypes.windll.dwmapi.DwmSetWindowAttribute
 
         def couleur(hexa):                   # format COLORREF : 0x00BBGGRR
-            r, g, b = (int(hexa[i:i + 2], 16) for i in (1, 3, 5))
+            r, g, b = cl.hex_rgb(hexa)
             return r | g << 8 | b << 16
 
         for attribut, valeur in ((20, 1), (19, 1),                       # mode sombre
-                                 (35, couleur(FOND)), (34, couleur(FOND)),  # barre + bordure
+                                 (35, couleur(PAGE)), (34, couleur(PAGE)),  # barre + bordure
                                  (36, couleur(TEXTE))):                   # texte du titre
             regler(hwnd, attribut, ctypes.byref(ctypes.c_int(valeur)), 4)
         racine.withdraw()                    # force Windows 10 à redessiner la barre
@@ -154,27 +260,81 @@ def barre_titre_sombre(racine):
         pass
 
 
-class BoutonIcone(tk.Canvas):
-    """Petit bouton carré avec un symbole dessiné : « lecture » (triangle) ou « stop » (carré)."""
+def image_icone(racine, symbole, fond, sur, couleur, t, rayon=7):
+    """Bouton carré complet (fond arrondi + symbole), calculé pixel par pixel avec anticrénelage :
+    symbole lisse et exactement centré."""
+    F, S, C = cl.hex_rgb(fond), cl.hex_rgb(sur), cl.hex_rgb(couleur)
+    m = t / 2
 
-    def __init__(self, parent, symbole, commande, taille=34):
-        super().__init__(parent, width=taille, height=taille, bg=SURFACE, highlightthickness=0,
+    def dans_fond(x, y):
+        cx, cy = min(max(x, rayon), t - rayon), min(max(y, rayon), t - rayon)
+        return (x - cx) ** 2 + (y - cy) ** 2 <= rayon * rayon
+
+    def dans_symbole(x, y):
+        dx, dy = x - m, y - m
+        if symbole == "croix":                    # deux barres en diagonale
+            demi = t * .16
+            epaisseur = max(1.7, t * .05)
+            return max(abs(dx), abs(dy)) <= demi and min(abs(dx - dy), abs(dx + dy)) <= epaisseur / 2 * 1.4142
+        if symbole == "stop":
+            return max(abs(dx), abs(dy)) <= t * .15
+        # lecture : triangle légèrement décalé à droite (centre optique)
+        ax, ay, bx, by, cx, cy = m - t * .15, m - t * .21, m - t * .15, m + t * .21, m + t * .21, m
+        d1 = (x - bx) * (ay - by) - (ax - bx) * (y - by)
+        d2 = (x - cx) * (by - cy) - (bx - cx) * (y - cy)
+        d3 = (x - ax) * (cy - ay) - (cx - ax) * (y - ay)
+        return not ((d1 < 0 or d2 < 0 or d3 < 0) and (d1 > 0 or d2 > 0 or d3 > 0))
+
+    n, lignes = 4, []
+    for y in range(t):
+        ligne = []
+        for x in range(t):
+            pts = [(x + (i + .5) / n, y + (j + .5) / n) for i in range(n) for j in range(n)]
+            f = sum(dans_fond(px, py) for px, py in pts) / n ** 2
+            k = sum(dans_symbole(px, py) for px, py in pts) / n ** 2
+            ligne.append("#%02x%02x%02x" % tuple(round(sc * (1 - f) + fc * (f - k) + cc * k)
+                                                 for sc, fc, cc in zip(S, F, C)))
+        lignes.append("{" + " ".join(ligne) + "}")
+    img = tk.PhotoImage(master=racine, width=t, height=t)
+    img.put(" ".join(lignes))
+    return img
+
+
+def sans_coins_arrondis(fenetre):
+    """Windows 11 arrondit les fenêtres flottantes (liste des menus déroulants, bulles) et trace
+    autour une fine bordure claire : coins et bords clairs. On désactive les deux."""
+    try:
+        racine = tk._default_root
+        ident = int(racine.tk.call("winfo", "id", fenetre)) if isinstance(fenetre, str) else fenetre.winfo_id()
+        u32, dwm = ctypes.windll.user32, ctypes.windll.dwmapi
+        for hwnd in {ident, u32.GetParent(ident), u32.GetAncestor(ident, 2)} - {0, None}:   # 2 : GA_ROOT
+            dwm.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(ctypes.c_int(1)), 4)           # pas d'arrondi
+            dwm.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(ctypes.c_uint(0xFFFFFFFE)), 4)  # pas de bordure
+    except Exception:
+        pass
+
+
+class BoutonIcone(tk.Canvas):
+    """Petit bouton carré avec un symbole : « lecture » (triangle), « stop » (carré) ou « croix »
+    (supprimer). Tous de la même taille. 'sur' : couleur du fond sur lequel il est posé."""
+
+    def __init__(self, parent, symbole, commande, taille=42, sur=SURFACE):
+        super().__init__(parent, width=taille, height=taille, bg=sur, highlightthickness=0,
                          cursor="hand2")
-        self.symbole, self.commande, self.t = symbole, commande, taille
+        self.symbole, self.commande, self.t, self.sur = symbole, commande, taille, sur
         self.bind("<Button-1>", lambda e: self.commande())
         self.bind("<Enter>", lambda e: self.dessiner(True))
         self.bind("<Leave>", lambda e: self.dessiner(False))
+        self.item = self.create_image(0, 0, anchor="nw")
         self.dessiner(False)
 
     def dessiner(self, survol):
-        t = self.t
-        self.delete("all")
-        arrondi(self, 1, 1, t - 1, t - 1, 7, fill=BORDURE if survol else CHAMP, outline=FONCE)
-        couleur = ACCENT if survol else TEXTE
-        if self.symbole == "lecture":
-            self.create_polygon(t * .36, t * .26, t * .36, t * .74, t * .76, t * .5, fill=couleur, outline="")
-        else:
-            self.create_rectangle(t * .34, t * .34, t * .66, t * .66, fill=couleur, outline="")
+        t, racine = self.t, self.winfo_toplevel()
+        cle = f"_icone_{self.symbole}_{t}_{survol}_{self.sur}"
+        if not hasattr(racine, cle):              # image lisse et opaque, faite une fois par symbole et état
+            setattr(racine, cle, image_icone(racine, self.symbole, BOUTON_SURVOL if survol else BOUTON,
+                                             self.sur, ACCENT if survol else TEXTE, t))
+        self.itemconfigure(self.item, image=getattr(racine, cle))
 
 
 class Curseur(tk.Frame):
@@ -193,9 +353,13 @@ class Curseur(tk.Frame):
         self.valeur.pack(side="left", padx=(10, 0))
         for evt in ("<Button-1>", "<B1-Motion>"):
             self.c.bind(evt, lambda e: self.aller(e.x))
-        self.c.bind("<MouseWheel>", lambda e: self.regler(self.lire() + (self.pas if e.delta > 0 else -self.pas)))
+        self.c.bind("<MouseWheel>", self.molette)
         variable.trace_add("write", lambda *_: self.dessiner())
         self.dessiner()
+
+    def molette(self, e):
+        self.regler(self.lire() + (self.pas if e.delta > 0 else -self.pas))
+        return "break"                           # la page ne défile pas en même temps
 
     def lire(self):
         try:
@@ -224,17 +388,149 @@ class Curseur(tk.Frame):
         x, y = 12 + t * self.L, 15
         c = self.c
         c.delete("all")
-        c.create_line(12, y, 12 + self.L, y, fill=CHAMP, width=6, capstyle="round")
-        c.create_line(12, y, x, y, fill=ACCENT if self.actif else BORDURE, width=6, capstyle="round")
-        c.create_oval(x - 9, y - 9, x + 9, y + 9, fill=TEXTE if self.actif else ETEINT, outline=FONCE, width=2)
+        arrondi(c, 9, y - 3, 14 + self.L, y + 2, 3, fill=CHAMP)                       # rail
+        arrondi(c, 9, y - 3, max(14, x + 2), y + 2, 3, fill=ACCENT if self.actif else BORDURE)
+        arrondi(c, x - 9, y - 9, x + 8, y + 8, 9, fill=TEXTE if self.actif else ETEINT, outline=FONCE)
         self.valeur.configure(text=f"{v:.{self.decimales}f}{self.unite}", fg=TEXTE if self.actif else ETEINT)
 
 
-def arrondi(c, x0, y0, x1, y1, r, **options):
-    """Rectangle aux coins arrondis sur un Canvas."""
-    pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
-           x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
-    return c.create_polygon(pts, smooth=True, **options)
+_COINS = {}                                  # coins arrondis déjà calculés (par rayon, couleurs…)
+_N_ARRONDI = [0]
+
+
+def _coins(c, r, fond, bord, epaisseur, sur):
+    """Les 4 coins (images r x r opaques, anticrénelées) d'un rectangle arrondi : mélange du fond
+    de la forme, de sa bordure et de la couleur 'sur' du Canvas derrière."""
+    cle = (str(c.winfo_toplevel()), r, fond, bord, epaisseur, sur)
+    if cle in _COINS:
+        return _COINS[cle]
+    f, b, s = cl.hex_rgb(fond), cl.hex_rgb(bord), cl.hex_rgb(sur)
+    n, images = 6, []
+    for qx, qy in ((0, 0), (r, 0), (0, r), (r, r)):         # haut-gauche, haut-droit, bas-gauche, bas-droit
+        lignes = []
+        for y in range(r):
+            ligne = []
+            for x in range(r):
+                ext = inte = 0
+                for i in range(n):
+                    for j in range(n):
+                        d2 = (qx + x + (i + .5) / n - r) ** 2 + (qy + y + (j + .5) / n - r) ** 2
+                        ext += d2 <= r * r
+                        inte += d2 <= (r - epaisseur) ** 2
+                ext, inte = ext / n ** 2, inte / n ** 2
+                ligne.append("#%02x%02x%02x" % tuple(
+                    round(sc * (1 - ext) + bc * (ext - inte) + fc * inte) for fc, bc, sc in zip(f, b, s)))
+            lignes.append("{" + " ".join(ligne) + "}")
+        img = tk.PhotoImage(master=c, width=r, height=r)
+        img.put(" ".join(lignes))
+        images.append(img)
+    _COINS[cle] = images
+    return images
+
+
+def arrondi(c, x0, y0, x1, y1, r, fill=None, outline=None, width=1, tags=(), recolorable=False):
+    """Rectangle aux coins arrondis LISSES sur un Canvas (coins en images anticrénelées, côtés en
+    rectangles nets). (x0, y0)-(x1, y1) : premier et dernier pixel couverts. Renvoie le tag de la forme."""
+    _N_ARRONDI[0] += 1
+    tag = f"arrondi{_N_ARRONDI[0]}"
+    tags = (tag,) + ((tags,) if isinstance(tags, str) else tuple(tags))
+    fond = fill or c.cget("bg")
+    bord = outline or fond
+    ep = max(1, round(width)) if outline and outline != fond else 0
+    x0, y0, x1, y1 = round(x0), round(y0), round(x1) + 1, round(y1) + 1
+    r = max(1, min(round(r), (x1 - x0) // 2, (y1 - y0) // 2))
+    rect = lambda a, b, cc, d, coul, role: (cc > a and d > b) and c.create_rectangle(
+        a, b, cc, d, fill=coul, outline="", width=0, tags=tags + (f"{tag}_{role}",))
+    rect(x0, y0 + r, x1, y1 - r, fond, "corps")              # corps de la forme
+    rect(x0 + r, y0, x1 - r, y1, fond, "corps")
+    if ep:                                                   # bordure des côtés droits
+        rect(x0 + r, y0, x1 - r, y0 + ep, bord, "bord")
+        rect(x0 + r, y1 - ep, x1 - r, y1, bord, "bord")
+        rect(x0, y0 + r, x0 + ep, y1 - r, bord, "bord")
+        rect(x1 - ep, y0 + r, x1, y1 - r, bord, "bord")
+    for k, (x, y) in enumerate(((x0, y0), (x1 - r, y0), (x0, y1 - r), (x1 - r, y1 - r))):
+        c.create_image(x, y, image=_coins(c, r, fond, bord, ep, c.cget("bg"))[k], anchor="nw",
+                       tags=tags + (f"{tag}_coin{k}",))
+    if recolorable:                              # pour recolorer() (survol des miniatures de position)
+        _ARRONDIS[(str(c), tag)] = (r, ep)
+    return tag
+
+
+_ARRONDIS = {}                                   # (canvas, tag) -> (rayon, épaisseur de bordure)
+
+
+def recolorer(c, tag, fill, outline=None):
+    """Change les couleurs d'une forme d'arrondi() sans recréer ses éléments (les recréer sous la
+    souris relancerait sans fin les événements d'entrée et de sortie)."""
+    r, ep = _ARRONDIS[(str(c), tag)]
+    bord = outline or fill
+    c.itemconfigure(f"{tag}_corps", fill=fill)
+    c.itemconfigure(f"{tag}_bord", fill=bord)
+    for k, img in enumerate(_coins(c, r, fill, bord, ep, c.cget("bg"))):
+        c.itemconfigure(f"{tag}_coin{k}", image=img)
+
+
+class Carte(tk.Canvas):
+    """Section d'une page : rectangle aux coins arrondis, fond SURFACE, bordure fine, titre.
+    Les réglages se placent dans .grille (grid). remplir=True : la carte occupe toute la place
+    (page Journal) ; sinon sa hauteur suit son contenu."""
+    MARGE = (26, 20)
+
+    def __init__(self, parent, titre=None, remplir=False):
+        super().__init__(parent, bg=PAGE, highlightthickness=0, height=40)
+        self.remplir = remplir
+        self.interieur = ttk.Frame(self)
+        if titre:
+            ttk.Label(self.interieur, text=titre, style="Carte.TLabel").pack(anchor="w", pady=(0, 8))
+        self.grille = ttk.Frame(self.interieur)
+        self.grille.pack(anchor="w", fill="both", expand=remplir)
+        self.fenetre = self.create_window(*self.MARGE, window=self.interieur, anchor="nw")
+        self.interieur.bind("<Configure>", lambda e: self.dessiner())
+        self.bind("<Configure>", lambda e: self.dessiner())
+
+    def dessiner(self):
+        w, (mx, my) = self.winfo_width(), self.MARGE
+        if self.remplir:
+            h = self.winfo_height()
+            self.itemconfigure(self.fenetre, width=max(1, w - 2 * mx), height=max(1, h - 2 * my))
+        else:
+            h = self.interieur.winfo_reqheight() + 2 * my
+            if int(float(self.cget("height"))) != h:
+                self.configure(height=h)
+        self.delete("fond")
+        if w > 4 and h > 4:
+            arrondi(self, 0, 0, w - 1, h - 1, 18, fill=SURFACE, outline=BORD_CARTE, tags="fond")
+            self.tag_lower("fond")
+
+
+class PageDefilante(ttk.Frame):
+    """Page qui défile à la molette quand son contenu dépasse la hauteur de la fenêtre."""
+
+    def __init__(self, parent):
+        super().__init__(parent, style="Page.TFrame")
+        self.toile = tk.Canvas(self, bg=PAGE, highlightthickness=0)
+        self.barre = ttk.Scrollbar(self, orient="vertical", command=self.toile.yview)
+        self.toile.configure(yscrollcommand=self.barre.set)
+        self.toile.pack(side="left", fill="both", expand=True)
+        self.contenu = ttk.Frame(self.toile, style="Page.TFrame", padding=(26, 22, 26, 22))
+        self.fenetre = self.toile.create_window(0, 0, window=self.contenu, anchor="nw")
+        self.contenu.bind("<Configure>", lambda e: self.maj())
+        self.toile.bind("<Configure>", lambda e: self.maj())
+
+    def maj(self):
+        largeur, hauteur = self.toile.winfo_width(), self.contenu.winfo_reqheight()
+        self.toile.itemconfigure(self.fenetre, width=largeur)
+        self.toile.configure(scrollregion=(0, 0, largeur, hauteur))
+        trop = hauteur > self.toile.winfo_height() > 1
+        if trop and not self.barre.winfo_ismapped():
+            self.barre.pack(side="right", fill="y", before=self.toile)
+        elif not trop and self.barre.winfo_ismapped():
+            self.barre.pack_forget()
+            self.toile.yview_moveto(0)
+
+    def defiler(self, e):
+        if self.barre.winfo_ismapped():
+            self.toile.yview_scroll(-1 if e.delta > 0 else 1, "units")
 
 
 class Case(tk.Frame):
@@ -264,30 +560,27 @@ class Case(tk.Frame):
         c.delete("all")
         if self.var.get():
             teinte = ACCENT if self.actif else BORDURE
-            arrondi(c, 2, 2, 24, 24, 7, fill=teinte, outline=teinte)
+            arrondi(c, 2, 2, 23, 23, 6, fill=teinte)
             c.create_line(7.5, 13.5, 11.5, 17.5, 18.5, 9, fill=FOND, width=2.6,
                           capstyle="round", joinstyle="round")
         else:
-            arrondi(c, 2, 2, 24, 24, 7, fill=CHAMP, outline=BORDURE, width=1.5)
+            arrondi(c, 2, 2, 23, 23, 6, fill=CHAMP, outline=BORDURE)
 
 
 class MenuDeroulant(tk.Frame):
-    """Menu déroulant avec bordure dessinée par un cadre d'1 px (orange quand la liste est ouverte)."""
+    """Menu déroulant avec bordure dessinée par un cadre d'1 px."""
 
     def __init__(self, parent, **options):
         super().__init__(parent, bg=FONCE)
         options.setdefault("state", "readonly")
-        avant_ouverture = options.pop("postcommand", None)
-
-        def ouverture():
-            self.configure(bg=ACCENT)
-            if avant_ouverture:
-                avant_ouverture()
-
-        self.combo = ttk.Combobox(self, postcommand=ouverture, **options)
+        self.combo = ttk.Combobox(self, **options)
         self.combo.pack(padx=1, pady=1)
-        liste = self.combo.tk.call("ttk::combobox::PopdownWindow", self.combo)
-        self.combo.tk.call("bind", liste, "<Unmap>", self.register(lambda: self.configure(bg=FONCE)))
+        try:                                      # fenêtre de la liste : fond sombre, coins non arrondis
+            liste = self.combo.tk.call("ttk::combobox::PopdownWindow", self.combo)
+            self.combo.tk.call(liste, "configure", "-background", CHAMP)
+            self.combo.tk.call("bind", liste, "<Map>", self.register(lambda: sans_coins_arrondis(liste)))
+        except tk.TclError:
+            pass
 
     def bind(self, *args, **kw):
         return self.combo.bind(*args, **kw)
@@ -321,6 +614,8 @@ class Bulle(tk.Toplevel):
 
     def montrer(self, focus=None):
         """À appeler une fois le contenu construit : capture le clavier et la souris."""
+        self.update_idletasks()
+        sans_coins_arrondis(self)
         self.focus_force()
         if focus:
             focus.focus_set()
@@ -343,7 +638,7 @@ class SelecteurCouleur:
     def __init__(self, ancre, couleur, valider):
         import numpy as np
         self.np, self.valider = np, valider
-        r, g, b = (int(couleur[i:i + 2], 16) / 255 for i in (1, 3, 5))
+        r, g, b = (x / 255 for x in cl.hex_rgb(couleur))
         self.h, self.s, self.v = colorsys.rgb_to_hsv(r, g, b)
         self.haut = haut = Bulle(ancre, ancre.winfo_rootx(), ancre.winfo_rooty() + ancre.winfo_height() + 6,
                                  lambda valider: valider and self.valider(self.couleur()))
@@ -387,7 +682,7 @@ class SelecteurCouleur:
         champ.pack(side="left", padx=10)
         champ.bind("<Return>", lambda e: (self.depuis_hex(self.code.get()), haut.fermer(True)))
         champ.bind("<FocusOut>", lambda e: self.depuis_hex(self.code.get()))
-        ttk.Button(bas, text="OK", style="Accent.TButton", command=lambda: haut.fermer(True)).pack(side="right")
+        ttk.Button(bas, text="OK", style="BulleAccent.TButton", command=lambda: haut.fermer(True)).pack(side="right")
         self.peindre_carre()
         self.maj()
         haut.montrer()
@@ -440,7 +735,7 @@ class SelecteurCouleur:
         if not texte.startswith("#"):
             texte = "#" + texte
         if re.fullmatch(r"#[0-9a-fA-F]{6}", texte):
-            r, g, b = (int(texte[i:i + 2], 16) / 255 for i in (1, 3, 5))
+            r, g, b = (x / 255 for x in cl.hex_rgb(texte))
             h, self.s, self.v = colorsys.rgb_to_hsv(r, g, b)
             if self.s > 0:                       # pour un gris, la teinte n'a pas de sens : on la garde
                 self.h = h
@@ -453,17 +748,17 @@ def se_chevauchent(z1, z2):
     return a0 < b1 - 0.01 and b0 < a1 - 0.01
 
 
-def dessiner_dispo(c, x, y, w, h, zones, couleur, tag_zone=True):
-    """Dessine un écran miniature découpé selon 'zones' ; couleur(zone) -> (remplissage, contour)."""
-    ids = {}
+def dessiner_dispo(c, x, y, w, h, zones, couleur):
+    """Dessine un écran miniature découpé selon 'zones' ; couleur(zone) -> (remplissage, contour).
+    Renvoie {zone: tag de sa forme}."""
+    tags = {}
     for z in zones:
         f0, f1 = cl.ZONES[z]
         x0 = x + f0 * w + (2 if f0 > 0 else 0)
         x1 = x + f1 * w - (2 if f1 < 1 else 0)
         rempli, contour = couleur(z)
-        ids[z] = arrondi(c, x0, y, x1, y + h, 5, fill=rempli, outline=contour, width=2,
-                         tags=(z,) if tag_zone else ())
-    return ids
+        tags[z] = arrondi(c, x0, y, x1, y + h, 5, fill=rempli, outline=contour, width=2, recolorable=True)
+    return tags
 
 
 class SelecteurZone:
@@ -483,32 +778,32 @@ class SelecteurZone:
     def dessiner(self):
         self.c.delete("all")
         arrondi(self.c, 1, 1, 69, 39, 6, fill=CHAMP, outline=FONCE)
-        dessiner_dispo(self.c, 6, 6, 58, 28, [self.zone.get()], lambda z: (ACCENT, ACCENT), False)
+        dessiner_dispo(self.c, 6, 6, 58, 28, [self.zone.get()], lambda z: (ACCENT, ACCENT))
 
     def ouvrir(self):
         prises = self.zones_prises()
         haut = Bulle(self.c, self.c.winfo_rootx(), self.c.winfo_rooty() + 46)
         cadre = haut.corps
         tk.Label(cadre, text=f"Position sur l'écran {self.ecran.get()}", bg=CHAMP, fg=DISCRET,
-                 font=(POLICE[0], 11)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+                 font=(POLICE[0], 11)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 9))
 
         def etat(z):
             if any(se_chevauchent(z, p) for p in prises):
-                return "#2a2a28", "#2a2a28"                       # pris : grisé
+                return SURFACE, SURFACE                           # pris : grisé
             return (ACCENT, ACCENT) if z == self.zone.get() else (BORDURE, BORDURE)
 
         for i, dispo in enumerate(cl.DISPOSITIONS):
             cv = tk.Canvas(cadre, width=132, height=82, bg=CHAMP, highlightthickness=0)
             cv.grid(row=1 + i // 3, column=i % 3, padx=7, pady=7)
-            ids = dessiner_dispo(cv, 4, 4, 124, 74, dispo, etat)
-            for z, ident in ids.items():
+            formes = dessiner_dispo(cv, 4, 4, 124, 74, dispo, etat)
+            for z, tag in formes.items():
                 if any(se_chevauchent(z, p) for p in prises):
                     continue
-                cv.tag_bind(ident, "<Enter>", lambda e, cv=cv, i=ident: (
-                    cv.itemconfigure(i, fill="#e08a6d", outline="#e08a6d"), cv.configure(cursor="hand2")))
-                cv.tag_bind(ident, "<Leave>", lambda e, cv=cv, i=ident, z=z: (
-                    cv.itemconfigure(i, fill=etat(z)[0], outline=etat(z)[1]), cv.configure(cursor="")))
-                cv.tag_bind(ident, "<Button-1>", lambda e, z=z: (self.zone.set(z), haut.fermer()))
+                cv.tag_bind(tag, "<Enter>", lambda e, cv=cv, t=tag: (
+                    recolorer(cv, t, "#e08a6d"), cv.configure(cursor="hand2")))
+                cv.tag_bind(tag, "<Leave>", lambda e, cv=cv, t=tag, z=z: (
+                    recolorer(cv, t, *etat(z)), cv.configure(cursor="")))
+                cv.tag_bind(tag, "<Button-1>", lambda e, z=z: haut.after_idle(lambda: (self.zone.set(z), haut.fermer())))
         haut.montrer()
 
 
@@ -568,7 +863,6 @@ class EditeurOnglets:
         self.etiquette.configure(text=texte if len(texte) <= 42 else texte[:41] + "…")
 
     def ouvrir(self):
-        self.cadre.configure(bg=ACCENT)
         champs = [tk.StringVar(value=u) for u in self.urls()] or [tk.StringVar()]
 
         def enregistrer(_valider):                # Échap comme clic à côté : on garde la saisie
@@ -591,8 +885,7 @@ class EditeurOnglets:
                 dernier = ttk.Entry(liste, textvariable=v, width=46)
                 dernier.grid(row=i, column=0, pady=4)
                 dernier.bind("<Return>", lambda e: haut.fermer())
-                ttk.Button(liste, text="✕", width=3,
-                           command=lambda v=v: (champs.remove(v), construire())).grid(
+                BoutonIcone(liste, "croix", lambda v=v: (champs.remove(v), construire()), sur=CHAMP).grid(
                     row=i, column=1, padx=(8, 0))
             return dernier
 
@@ -602,8 +895,8 @@ class EditeurOnglets:
 
         boutons = tk.Frame(corps, bg=CHAMP)
         boutons.pack(fill="x", pady=(12, 0))
-        ttk.Button(boutons, text="+ Ajouter un onglet", command=ajouter).pack(side="left")
-        ttk.Button(boutons, text="OK", style="Accent.TButton", command=haut.fermer).pack(side="right")
+        ttk.Button(boutons, text="+ Ajouter un onglet", style="Bulle.TButton", command=ajouter).pack(side="left")
+        ttk.Button(boutons, text="OK", style="BulleAccent.TButton", command=haut.fermer).pack(side="right")
         haut.montrer(construire())
 
 
@@ -625,11 +918,11 @@ class LigneApp:
         self.onglets = EditeurOnglets(parent, self.args)
         ecran = MenuDeroulant(parent, textvariable=self.ecran, values=cl.ECRANS, state="readonly", width=12)
         position = SelecteurZone(parent, self.zone, self.ecran, lambda: zones_prises(self))
-        bouton = ttk.Button(parent, text="✕", width=3, command=lambda: supprimer(self))
+        bouton = BoutonIcone(parent, "croix", lambda: supprimer(self))
         self.widgets = [menu, self.champ, ecran, position.c, bouton]
         for col, w in enumerate(self.widgets):
-            w.grid(row=rang, column=col, padx=(0, 22), pady=13, sticky="w")
-        self.onglets.cadre.grid(row=rang, column=1, padx=(0, 22), pady=13, sticky="w")
+            w.grid(row=rang, column=col, padx=(0, 34), pady=14, sticky="w")
+        self.onglets.cadre.grid(row=rang, column=1, padx=(0, 34), pady=14, sticky="w")
         self.widgets.append(self.onglets.cadre)
         self.adapter()
 
@@ -677,13 +970,13 @@ class LigneApp:
 
 
 
-COMPTES_TYPES = {"Gmail": {"type": "gmail", "nom": "Gmail", "webmail": "https://mail.google.com"},
-                 "ENSMA": {"nom": "ENSMA", "serveur": "", "webmail": ""}}
+COMPTES_TYPES = {"Gmail": {"type": "gmail", "nom": "Gmail", "webmail": "https://mail.google.com"}}
 
 
 class LigneCompte:
     """Une ligne du tableau des comptes mail. Gmail : bouton « Se connecter avec Google » (OAuth,
-    aucun mot de passe) ; autres boîtes : serveur IMAP et mot de passe."""
+    aucun mot de passe) ; autres boîtes : serveur IMAP, et mot de passe tant qu'il n'est pas
+    enregistré, puis bouton « Déconnecter »."""
 
     def __init__(self, parent, rang, compte, supprimer, fenetre):
         self.fenetre, self.gmail = fenetre, compte.get("type") == "gmail"
@@ -702,24 +995,36 @@ class LigneCompte:
             adresse = ttk.Entry(parent, textvariable=self.adresse, width=26)
             serveur = ttk.Entry(parent, textvariable=self.serveur, width=18)
             acces = ttk.Frame(parent)
-            ttk.Entry(acces, textvariable=self.mdp, width=14, show="•").pack(side="left")
-            self.etiquette_mdp = ttk.Label(acces, style="Discret.TLabel", width=11)
-            self.etiquette_mdp.pack(side="left", padx=(8, 0))
+            self.champ_mdp = ttk.Entry(acces, textvariable=self.mdp, width=24, show="•")
+            self.bouton_oubli = ttk.Button(acces, text="Déconnecter", command=self.deconnexion_imap)
             self.etat_mdp()
         self.widgets = [ttk.Entry(parent, textvariable=self.nom, width=9), adresse, serveur, acces,
                         ttk.Entry(parent, textvariable=self.webmail, width=24),
-                        ttk.Button(parent, text="✕", width=3, command=lambda: supprimer(self))]
+                        BoutonIcone(parent, "croix", lambda: supprimer(self))]
         for col, w in enumerate(self.widgets):
-            w.grid(row=rang, column=col, padx=(0, 14), pady=6, sticky="w")
+            w.grid(row=rang, column=col, padx=(0, 24), pady=9, sticky="w")
 
     def etat_mdp(self):
+        """Mot de passe enregistré : bouton « Déconnecter » ; sinon, le champ pour le taper."""
         if self.gmail:
             return
         try:
             garde = bool(self.adresse.get().strip()) and cl.lire_mot_de_passe(self.adresse.get()) is not None
         except Exception:
             garde = False
-        self.etiquette_mdp.configure(text="✓ enregistré" if garde else "")
+        (self.champ_mdp if garde else self.bouton_oubli).pack_forget()
+        (self.bouton_oubli if garde else self.champ_mdp).pack(side="left")
+
+    def deconnexion_imap(self):
+        adresse = self.adresse.get().strip()
+        if messagebox.askyesno("Déconnecter", f"Effacer le mot de passe de {adresse} ? Runner ne lira plus "
+                                              "cette boîte tant qu'un nouveau mot de passe n'est pas enregistré."):
+            try:
+                cl.oublier_mot_de_passe(adresse)
+            except Exception as e:
+                cl.print(f"Effacement du mot de passe de {adresse} impossible : {e}")
+            self.etat_mdp()
+            self.fenetre.status.set(f"{adresse} déconnecté")
 
     def etat_google(self):
         try:
@@ -779,6 +1084,7 @@ class LigneCompte:
             return False
 
     def valeur(self):
+        """Réglages du compte tels qu'enregistrés dans config.json (jamais le mot de passe)."""
         adresse = self.adresse.get().strip()
         v = {"nom": self.nom.get().strip(), "adresse": "" if adresse.startswith("(") else adresse,
              "webmail": normaliser_url(self.webmail.get()), "actif": True}
@@ -803,6 +1109,7 @@ class Calibrage(tk.Toplevel):
         super().__init__(fenetre)
         self.fenetre = fenetre
         self.title("Calibrage de la détection")
+        icone_nette(self)
         self.configure(bg=SURFACE)
         self.resizable(False, False)
         self.transient(fenetre)
@@ -883,6 +1190,7 @@ class Calibrage(tk.Toplevel):
                          self.apres_claps)
 
     def apres_claps(self, sons):
+        """Étape 1 finie : assez de claps entendus ? Sinon on propose de recommencer."""
         plus_fort = max((s["vol"] for s in sons), default=0)
         n = sum(s["vol"] >= 0.3 * plus_fort for s in sons) if sons else 0
         if n < 3:
@@ -899,6 +1207,7 @@ class Calibrage(tk.Toplevel):
         self.enregistrer(8, "Parle normalement", self.PHRASE, self.resultat)
 
     def resultat(self, sons_parole):
+        """Étape 2 finie : seuils calculés et taux de reconnaissance affichés avant de les appliquer."""
         try:
             reglages, ok, n, faux, total = cl.calibrer(self.sons_claps, sons_parole)
         except ValueError as e:
@@ -947,6 +1256,7 @@ class Recap(tk.Tk):
         appliquer_theme(self)
         self.configure(bg=SURFACE)
         self.title("Runner — aujourd'hui")
+        icone_nette(self)
         self.attributes("-topmost", True)
         self.bind("<Escape>", lambda e: self.destroy())
         c = tk.Frame(self, bg=SURFACE, padx=28, pady=22)
@@ -971,13 +1281,16 @@ class Recap(tk.Tk):
                 debut, fin = datetime.fromisoformat(debut), datetime.fromisoformat(fin)
                 ligne(f"{debut:%H:%M} – {fin:%H:%M}   {titre}" + (f"   · {lieu}" if lieu else ""))
         if d.get("mails"):
-            section("Mails non lus")
+            section("Nouveaux mails")
             for nom, boite in d["mails"].items():
                 haut = tk.Frame(c, bg=SURFACE)
                 haut.pack(anchor="w", fill="x", pady=(6, 2))
                 if isinstance(boite, dict):
-                    tk.Label(haut, text=f"{nom}  ·  {boite['non_lus']}", bg=SURFACE, fg=TEXTE,
-                             font=(POLICE[0], 12, "bold")).pack(side="left")
+                    tk.Label(haut, text=f"{nom}  ·  {boite.get('nouveaux', 0)} nouveau"
+                                        f"{'x' if boite.get('nouveaux', 0) > 1 else ''}",
+                             bg=SURFACE, fg=TEXTE, font=(POLICE[0], 12, "bold")).pack(side="left")
+                    tk.Label(haut, text=f"   {boite['non_lus']:,} non lus".replace(",", " "), bg=SURFACE,
+                             fg=DISCRET, font=(POLICE[0], 11)).pack(side="left")
                 else:
                     tk.Label(haut, text=f"{nom}  ·  indisponible", bg=SURFACE, fg="#e0b35a",
                              font=(POLICE[0], 12, "bold")).pack(side="left")
@@ -990,19 +1303,22 @@ class Recap(tk.Tk):
                         ligne(texte if len(texte) <= 70 else texte[:69] + "…", DISCRET)
                 else:
                     ligne(boite, DISCRET)
-        ttk.Button(c, text="Fermer", command=self.destroy).pack(anchor="e", pady=(20, 0))
         self.update_idletasks()
         self.geometry(f"+{self.winfo_screenwidth() - self.winfo_reqwidth() - 40}+40")
         barre_titre_sombre(self)
 
 
 class Fenetre(tk.Tk):
+    """Fenêtre de réglages : menu des pages à gauche, pages en cartes, barre du bas
+    (Enregistrer, tests, Stop). Les réglages ne sont écrits dans config.json qu'à « Enregistrer » ;
+    les tests utilisent ceux de la fenêtre, même non enregistrés."""
     def __init__(self):
         super().__init__()
-        self.title("Runner — réglages")
+        self.title("Runner")
         appliquer_theme(self)
+        icone_nette(self)
         larg, haut = self.winfo_screenwidth(), self.winfo_screenheight()
-        w, h = max(1200, int(larg * 0.72)), max(820, int(haut * 0.8))
+        w, h = max(1240, int(larg * 0.76)), max(840, int(haut * 0.82))
         w, h = min(w, larg - 40), min(h, haut - 80)
         self.geometry(f"{w}x{h}+{(larg - w) // 2}+{max(0, (haut - h) // 2 - 20)}")
         self.minsize(1100, 760)
@@ -1016,26 +1332,17 @@ class Fenetre(tk.Tk):
         self.lecteur_voix = None
 
         # Menu à gauche
-        nav = ttk.Frame(self, style="Nav.TFrame", padding=(14, 22))
+        tk.Frame(self, bg=BORD_CARTE, height=1).pack(side="top", fill="x")   # sous la barre de titre
+        nav = ttk.Frame(self, style="Nav.TFrame", padding=(16, 22))
         nav.pack(side="left", fill="y")
         ttk.Frame(nav, style="Nav.TFrame", height=22).pack()
+        tk.Frame(self, bg=BORD_CARTE, width=1).pack(side="left", fill="y")   # séparation menu / pages
         droite = ttk.Frame(self, style="Fond.TFrame")
         droite.pack(side="left", fill="both", expand=True)
 
-        # Grand cadre arrondi qui contient les pages
-        toile = tk.Canvas(droite, bg=FOND, highlightthickness=0)
-        toile.pack(fill="both", expand=True, padx=(0, 16), pady=(16, 0))
-        interieur = ttk.Frame(toile)
-        fenetre_interieure = toile.create_window(10, 10, window=interieur, anchor="nw")
-
-        def redessiner(e):
-            toile.delete("cadre")
-            arrondi(toile, 1, 1, e.width - 2, e.height - 2, 16, fill=SURFACE, outline=BORDURE,
-                    width=1, tags="cadre")
-            toile.tag_lower("cadre")
-            toile.itemconfigure(fenetre_interieure, width=e.width - 20, height=e.height - 20)
-
-        toile.bind("<Configure>", redessiner)
+        # Les pages (chaque section a sa propre carte arrondie)
+        interieur = ttk.Frame(droite, style="Page.TFrame")
+        interieur.pack(fill="both", expand=True, padx=(8, 8), pady=(8, 0))
         interieur.grid_rowconfigure(0, weight=1)
         interieur.grid_columnconfigure(0, weight=1)
 
@@ -1045,22 +1352,27 @@ class Fenetre(tk.Tk):
                                   ("Musique", self.page_musique),
                                   ("Détection", self.page_detection), ("Système", self.page_systeme),
                                   ("Journal", self.page_journal)]:
-            page = ttk.Frame(interieur, padding=(32, 26))
+            if titre == "Journal":                   # le journal occupe toute la hauteur
+                page = ttk.Frame(interieur, style="Page.TFrame", padding=(26, 22))
+                construire(page)
+            else:
+                page = PageDefilante(interieur)
+                construire(page.contenu)
             page.grid(row=0, column=0, sticky="nsew")
-            construire(page)
             self.pages[titre] = page
-            self.boutons[titre] = ttk.Button(nav, text=titre, style="Nav.TButton", width=16,
+            self.boutons[titre] = ttk.Button(nav, text=titre, style="Nav.TButton", width=14,
                                              command=lambda t=titre: self.afficher(t))
             self.boutons[titre].pack(fill="x", pady=2)
         self.afficher("Apps")
+        self.bind_all("<MouseWheel>", self.molette)
 
         # Barre du bas
         bas = ttk.Frame(droite, padding=16, style="Fond.TFrame")
         bas.pack(fill="x")
         ttk.Label(bas, textvariable=self.status, style="Fond.TLabel").pack(side="left")
-        ttk.Button(bas, text="Tester tout", style="Accent.TButton", command=self.tester_tout).pack(side="right")
-        ttk.Button(bas, text="Enregistrer", command=self.enregistrer).pack(side="right", padx=(0, 8))
-        self.bouton_stop = ttk.Button(bas, text="■  Stop", command=self.arreter)
+        ttk.Button(bas, text="Tester tout", style="BarreAccent.TButton", command=self.tester_tout).pack(side="right")
+        ttk.Button(bas, text="Enregistrer", style="Barre.TButton", command=self.enregistrer).pack(side="right", padx=(0, 8))
+        self.bouton_stop = ttk.Button(bas, text="■  Stop", style="Barre.TButton", command=self.arreter)
 
         self.protocol("WM_DELETE_WINDOW", self.fermer)
         barre_titre_sombre(self)
@@ -1077,11 +1389,27 @@ class Fenetre(tk.Tk):
         for t, b in self.boutons.items():
             b.configure(style="NavSel.TButton" if t == titre else "Nav.TButton")
 
+    def molette(self, e):
+        page = self.pages.get(getattr(self, "page_actuelle", ""))
+        try:
+            dans_la_fenetre = e.widget.winfo_toplevel() is self     # pas dans une bulle ou le calibrage
+        except (AttributeError, tk.TclError):
+            dans_la_fenetre = False
+        if isinstance(page, PageDefilante) and dans_la_fenetre:
+            page.defiler(e)
+
+    @staticmethod
+    def carte(page, titre=None):
+        """Nouvelle section (carte arrondie) en bas de la page ; renvoie le cadre où placer ses réglages."""
+        c = Carte(page, titre)
+        c.pack(fill="x", pady=(0, 18))
+        return c.grille
+
     @staticmethod
     def ligne(f, rang, texte, widget):
         etiquette = ttk.Label(f, text=texte)
-        etiquette.grid(row=rang, column=0, sticky="w", pady=16, padx=(0, 40))
-        widget.grid(row=rang, column=1, sticky="w", pady=16)
+        etiquette.grid(row=rang, column=0, sticky="w", pady=14, padx=(0, 56))
+        widget.grid(row=rang, column=1, sticky="w", pady=14)
         return etiquette
 
     def dire(self, message):
@@ -1091,20 +1419,21 @@ class Fenetre(tk.Tk):
             cl.print(message)
 
     # ------------------------------- Pages -------------------------------
-    def page_apps(self, f):
+    def page_apps(self, page):
+        f = self.carte(page, "Apps à lancer")
         self.cadre_apps = ttk.Frame(f)
         self.cadre_apps.pack(anchor="w", pady=4)
         for col, txt in enumerate(["App", "Arguments / onglets", "Écran", "Position"]):
             ttk.Label(self.cadre_apps, text=txt, style="Titre.TLabel").grid(
-                row=0, column=col, padx=(0, 22), pady=(0, 2), sticky="w")
+                row=0, column=col, padx=(0, 34), pady=(0, 2), sticky="w")
         self.lignes, self.prochain_rang = [], 1
         for app in self.cfg["apps"]:
             self.ajouter_app(app)
         boutons = ttk.Frame(f)
-        boutons.pack(anchor="w", pady=(10, 14))
+        boutons.pack(anchor="w", pady=(12, 0))
         ttk.Button(boutons, text="+ Ajouter une app", command=lambda: self.ajouter_app(
             {"exe": "", "ecran": "principal", "zone": "plein"})).pack(side="left")
-        ttk.Button(boutons, text="▶  Tester les apps", command=self.tester_apps).pack(side="left", padx=12)
+        ttk.Button(boutons, text="▶  Tester les apps", command=self.tester_apps).pack(side="left", padx=14)
 
     def ajouter_app(self, app):
         ligne = LigneApp(self.cadre_apps, self.prochain_rang, app, self.supprimer_app, self.zones_prises)
@@ -1118,7 +1447,8 @@ class Fenetre(tk.Tk):
         ligne.detruire()
         self.lignes.remove(ligne)
 
-    def page_leds(self, f):
+    def page_leds(self, page):
+        f = self.carte(page, "LED")
         c = self.cfg["leds"]
         self.led_active = tk.BooleanVar(value=c["active"])
         self.led_motif = tk.StringVar(value=c["motif"])
@@ -1164,10 +1494,12 @@ class Fenetre(tk.Tk):
         self.rythme_actif = tk.BooleanVar(value=r.get("actif", False))
         self.rythme_mode = tk.StringVar(value=cl.MODES_RYTHME.get(r.get("mode", "mono")))
         self.rythme_sens = tk.IntVar(value=int(r.get("sensibilite", 60)))
-        ttk.Separator(f).grid(row=6, column=0, columnspan=3, sticky="ew", pady=(10, 6))
+        ttk.Button(f, text="▶  Tester les LED", command=self.tester_leds).grid(
+            row=6, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        f = self.carte(page, "Mode rythme")
         case_rythme = Case(f, "Suivre le rythme de la musique (remplace le motif de démarrage)",
                            self.rythme_actif)
-        case_rythme.grid(row=7, column=0, columnspan=3, sticky="w", pady=(8, 4))
+        case_rythme.grid(row=7, column=0, columnspan=3, sticky="w", pady=(0, 8))
         menu_mode = MenuDeroulant(f, textvariable=self.rythme_mode, width=28,
                                   values=list(cl.MODES_RYTHME.values()))
         et_mode = self.ligne(f, 8, "Couleurs", menu_mode)
@@ -1183,7 +1515,7 @@ class Fenetre(tk.Tk):
         self.rythme_eteindre = tk.BooleanVar(value=r.get("eteindre_silences", True))
         case_eteindre = Case(f, "Éteindre les LED pendant les silences (sinon luminosité minimum)",
                              self.rythme_eteindre)
-        case_eteindre.grid(row=11, column=0, columnspan=3, sticky="w", pady=(8, 4))
+        case_eteindre.grid(row=11, column=0, columnspan=3, sticky="w", pady=(10, 8))
         self.rythme_actif.trace_add("write", lambda *_: self.prechargement_auto())
 
         def griser(*_):
@@ -1208,13 +1540,11 @@ class Fenetre(tk.Tk):
         self.led_active.trace_add("write", griser)
         self.rythme_actif.trace_add("write", griser)
         griser()
-        boutons = ttk.Frame(f)
-        boutons.grid(row=12, column=0, columnspan=3, sticky="w", pady=(16, 0))
-        ttk.Button(boutons, text="▶  Tester les LED", command=self.tester_leds).pack(side="left")
-        ttk.Button(boutons, text="▶  Tester le rythme (avec la musique)",
-                   command=self.tester_rythme).pack(side="left", padx=12)
+        ttk.Button(f, text="▶  Tester le rythme (avec la musique)", command=self.tester_rythme).grid(
+            row=12, column=0, columnspan=3, sticky="w", pady=(12, 0))
 
-    def page_voix(self, f):
+    def page_voix(self, page):
+        f = self.carte(page, "Voix")
         v = self.cfg["voix"]
         self.voix_active = tk.BooleanVar(value=v["active"])
         self.voix = tk.StringVar(value=v["voix"])
@@ -1224,6 +1554,8 @@ class Fenetre(tk.Tk):
         self.coords = (v["ville"], v["lat"], v["lon"])
         self.parties = {nom: (tk.BooleanVar(value=v["parties"][nom]["actif"]),
                               tk.StringVar(value=v["parties"][nom]["texte"])) for nom in cl.PARTIES}
+        # Mails : phrases pour un seul nouveau mail et pour aucun (la principale sert s'il y en a plusieurs)
+        self.mails_cas = {k: tk.StringVar(value=v["parties"]["mails"].get(k, "")) for k in ("un", "aucun")}
 
         Case(f, "Runner parle au démarrage", self.voix_active).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
@@ -1234,26 +1566,33 @@ class Fenetre(tk.Tk):
         self.ligne(f, 1, "Voix", cadre_v)
         self.ligne(f, 2, "Ville (météo)", ttk.Entry(f, textvariable=self.voix_ville, width=20))
 
-        ttk.Separator(f).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(14, 6))
-        ttk.Label(f, text="Phrase principale", style="Titre.TLabel").grid(row=4, column=0, sticky="w", pady=(4, 0))
+        f = self.carte(page, "Phrase principale")
         noms = {"accueil": "Accueil", "heure": "Heure", "meteo": "Météo", "cours": "Cours",
                 "mails": "Mails", "fin": "Fin"}
         aides = {"heure": "{heure}", "meteo": "{temperature}  {ciel}  {ville}",
-                 "cours": "{cours}  {heure_cours}  {salle}", "mails": "{mails}  {nb_mails}"}
+                 "cours": "{cours}  {heure_cours}  {salle}", "mails": "{nb_mails}  {expediteur}  {objet}"}
         for i, nom in enumerate(cl.PARTIES):
             actif, texte = self.parties[nom]
-            Case(f, noms[nom], actif).grid(row=5 + i, column=0, sticky="w", pady=8, padx=(0, 40))
-            ttk.Entry(f, textvariable=texte, width=58).grid(row=5 + i, column=1, sticky="w", pady=8)
+            Case(f, noms[nom], actif).grid(row=5 + i, column=0, sticky="w", pady=10, padx=(0, 56))
+            ttk.Entry(f, textvariable=texte, width=58).grid(row=5 + i, column=1, sticky="w", pady=10)
             if nom in aides:
-                ttk.Label(f, text=aides[nom], style="Discret.TLabel").grid(row=5 + i, column=2, sticky="w", padx=14)
+                cadre_aide = ttk.Frame(f)
+                cadre_aide.grid(row=5 + i, column=2, sticky="w", padx=18)
+                ttk.Label(cadre_aide, text=aides[nom], style="Discret.TLabel").pack(side="left")
+                if nom == "mails":
+                    bouton_cas = ttk.Button(cadre_aide, text="Autres cas…")
+                    bouton_cas.configure(command=lambda b=bouton_cas: self.phrases_mails(b))
+                    bouton_cas.pack(side="left", padx=(14, 0))
             actif.trace_add("write", lambda *_: self.maj_apercu())
             texte.trace_add("write", lambda *_: self.maj_apercu())
+        for var in self.mails_cas.values():
+            var.trace_add("write", lambda *_: self.maj_apercu())
         self.apercu_texte = tk.StringVar()
         ttk.Label(f, textvariable=self.apercu_texte, style="Discret.TLabel", wraplength=760,
                   justify="left").grid(row=11, column=1, columnspan=2, sticky="w", pady=(4, 10))
         self.maj_apercu()
 
-        ttk.Separator(f).grid(row=12, column=0, columnspan=3, sticky="ew", pady=(8, 6))
+        f = self.carte(page, "Secours et délai")
         self.ligne(f, 13, "Phrase de secours", ttk.Entry(f, textvariable=self.voix_secours, width=58))
         self.ligne(f, 14, "Délai après la musique", Curseur(f, self.voix_delai, 0, 10, 0.5, unite="s"))
 
@@ -1273,9 +1612,35 @@ class Fenetre(tk.Tk):
             cl.CFG = cfg_avant
 
     def lire_parties(self):
-        return {nom: {"actif": a.get(), "texte": t.get()} for nom, (a, t) in self.parties.items()}
+        parties = {nom: {"actif": a.get(), "texte": t.get()} for nom, (a, t) in self.parties.items()}
+        parties["mails"].update({k: v.get() for k, v in self.mails_cas.items()})
+        return parties
 
-    def page_infos(self, f):
+    def phrases_mails(self, ancre):
+        """Les trois phrases des mails, selon le nombre de nouveaux mails."""
+        bulle = Bulle(ancre, max(0, ancre.winfo_rootx() - 420), ancre.winfo_rooty() + ancre.winfo_height() + 6)
+        c = bulle.corps
+        tk.Label(c, text="Phrase des mails selon le nombre de nouveaux mails", bg=CHAMP, fg=DISCRET,
+                 font=(POLICE[0], 11)).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        champs = [("Plusieurs", self.parties["mails"][1]), ("Un seul", self.mails_cas["un"]),
+                  ("Aucun", self.mails_cas["aucun"])]
+        premier = None
+        for i, (nom, var) in enumerate(champs, start=1):
+            tk.Label(c, text=nom, bg=CHAMP, fg=TEXTE, font=POLICE).grid(row=i, column=0, sticky="w",
+                                                                         pady=5, padx=(0, 18))
+            champ = ttk.Entry(c, textvariable=var, width=58)
+            champ.grid(row=i, column=1, sticky="w", pady=5)
+            champ.bind("<Return>", lambda e: bulle.fermer())
+            premier = premier or champ
+        tk.Label(c, text="Variables : {nb_mails}  {expediteur}  {objet}.  « Aucun » vide : rien n'est dit.",
+                 bg=CHAMP, fg=DISCRET, font=(POLICE[0], 11)).grid(row=4, column=0, columnspan=2, sticky="w",
+                                                                  pady=(10, 0))
+        ttk.Button(c, text="OK", style="BulleAccent.TButton", command=bulle.fermer).grid(
+            row=5, column=1, sticky="e", pady=(12, 0))
+        bulle.montrer(premier)
+
+    def page_infos(self, page):
+        f = self.carte(page, "Emploi du temps")
         i = self.cfg["infos"]
         self.agenda_actif = tk.BooleanVar(value=i["agenda"].get("actif", False))
         self.agenda_lien = tk.StringVar(value=i["agenda"].get("lien", ""))
@@ -1283,59 +1648,64 @@ class Fenetre(tk.Tk):
         self.ouvrir_webmail = tk.BooleanVar(value=i.get("ouvrir_webmail", True))
         self.recap = tk.BooleanVar(value=i.get("recap", True))
 
-        def titre(rang, texte):
-            ttk.Label(f, text=texte, style="Titre.TLabel").grid(row=rang, column=0, sticky="w", pady=(4, 0))
-
         def aide(rang, texte):
             ttk.Label(f, text=texte, style="Discret.TLabel", wraplength=900, justify="left").grid(
                 row=rang, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
-        titre(0, "Emploi du temps")
         Case(f, "Annoncer le prochain cours (partie « Cours » de la phrase, page Voix)", self.agenda_actif).grid(
-            row=1, column=0, columnspan=3, sticky="w", pady=8)
-        ttk.Label(f, text="Lien du calendrier (.ics)").grid(row=2, column=0, sticky="w", pady=8, padx=(0, 40))
+            row=1, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        ttk.Label(f, text="Lien du calendrier (.ics)").grid(row=2, column=0, sticky="w", pady=8, padx=(0, 56))
         ttk.Entry(f, textvariable=self.agenda_lien, width=70).grid(row=2, column=1, columnspan=2, sticky="w", pady=8)
         aide(3, "ADE : bouton « Export agenda » (ou « Exporter »), puis copier le lien proposé (https:// ou webcal://).")
+        ttk.Button(f, text="▶  Tester l'emploi du temps", command=self.tester_agenda).grid(
+            row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
-        ttk.Separator(f).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(10, 6))
-        titre(5, "Mails")
-        Case(f, "Annoncer les mails non lus (partie « Mails » de la phrase)", self.mails_actif).grid(
-            row=6, column=0, columnspan=3, sticky="w", pady=8)
+        f = self.carte(page, "Mails")
+        Case(f, "Annoncer les nouveaux mails (partie « Mails » de la phrase)", self.mails_actif).grid(
+            row=6, column=0, columnspan=3, sticky="w", pady=(0, 8))
         self.cadre_comptes = ttk.Frame(f)
         self.cadre_comptes.grid(row=7, column=0, columnspan=3, sticky="w")
-        for col, txt in enumerate(["Nom", "Adresse", "Serveur IMAP", "Accès", "Webmail"]):
+        for col, txt in enumerate(["Nom", "Adresse", "Serveur IMAP", "Mot de passe / connexion", "Webmail"]):
             ttk.Label(self.cadre_comptes, text=txt, style="Titre.TLabel").grid(
-                row=0, column=col, padx=(0, 14), sticky="w")
+                row=0, column=col, padx=(0, 24), sticky="w")
         self.comptes, self.rang_compte = [], 1
         for c in i["mails"].get("comptes", []):
             self.ajouter_compte(c)
         boutons = ttk.Frame(f)
-        boutons.grid(row=8, column=0, columnspan=3, sticky="w", pady=(8, 4))
-        for texte, modele in [("+ Gmail", COMPTES_TYPES["Gmail"]), ("+ ENSMA", COMPTES_TYPES["ENSMA"]),
-                              ("+ Autre compte", {})]:
+        boutons.grid(row=8, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        for texte, modele in [("+ Gmail", COMPTES_TYPES["Gmail"]), ("+ Autre boîte mail", {})]:
             ttk.Button(boutons, text=texte, command=lambda m=modele: self.ajouter_compte(dict(m))).pack(
-                side="left", padx=(0, 8))
-        aide(9, "Gmail : « Se connecter avec Google », en lecture seule et sans mot de passe dans Runner. "
-                "Autres boîtes : serveur IMAP et mot de passe de la messagerie. Mots de passe et connexions sont "
-                "gardés par Windows (Gestionnaire d'identification), jamais dans config.json. "
-                "Rien n'est marqué comme lu.")
+                side="left", padx=(0, 10))
+        ttk.Button(boutons, text="▶  Tester les mails", command=self.tester_mails).pack(side="left", padx=(14, 0))
 
-        ttk.Separator(f).grid(row=10, column=0, columnspan=3, sticky="ew", pady=(10, 6))
-        Case(f, "Ouvrir le webmail dans le navigateur au lancement", self.ouvrir_webmail).grid(
-            row=11, column=0, columnspan=3, sticky="w", pady=6)
-        Case(f, "Afficher le récap à l'écran au lancement (cours du jour, derniers mails)", self.recap).grid(
-            row=12, column=0, columnspan=3, sticky="w", pady=6)
-        tests = ttk.Frame(f)
-        tests.grid(row=13, column=0, columnspan=3, sticky="w", pady=(14, 0))
-        ttk.Button(tests, text="▶  Tester l'emploi du temps", command=self.tester_agenda).pack(side="left")
-        ttk.Button(tests, text="▶  Tester les mails", command=self.tester_mails).pack(side="left", padx=12)
-        ttk.Button(tests, text="▶  Voir le récap", command=self.voir_recap).pack(side="left")
+        f = self.carte(page, "Au lancement")
+        Case(f, "Ouvrir les webmails dans le navigateur au lancement", self.ouvrir_webmail).grid(
+            row=11, column=0, columnspan=3, sticky="w", pady=(0, 6))
+        Case(f, "Afficher le récap à l'écran au lancement (cours du jour, nouveaux mails)", self.recap).grid(
+            row=12, column=0, columnspan=3, sticky="w", pady=9)
+        ttk.Button(f, text="▶  Voir le récap", command=self.voir_recap).grid(
+            row=13, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
     def ajouter_compte(self, compte):
         self.comptes.append(LigneCompte(self.cadre_comptes, self.rang_compte, compte, self.supprimer_compte, self))
         self.rang_compte += 1
 
     def supprimer_compte(self, ligne):
+        """Retire le compte, et efface aussi son mot de passe (ou sa connexion Google) de Windows."""
+        adresse = ligne.valeur()["adresse"]
+        if adresse and not messagebox.askyesno(
+                "Supprimer le compte", f"Supprimer {adresse} ?\n\nSon mot de passe (ou sa connexion Google) "
+                "sera aussi effacé de Windows."):
+            return
+        if adresse:
+            try:
+                if ligne.gmail:
+                    en_fond(lambda: cl.deconnecter_google(adresse))     # révoque aussi chez Google
+                else:
+                    cl.oublier_mot_de_passe(adresse)
+            except Exception as e:
+                cl.print(f"Effacement du mot de passe de {adresse} impossible : {e}")
+            self.status.set(f"{adresse} supprimé : pense à enregistrer")
         ligne.detruire()
         self.comptes.remove(ligne)
 
@@ -1395,7 +1765,8 @@ class Fenetre(tk.Tk):
             for compte, mdp in comptes:
                 try:
                     b = cl.lire_gmail(compte) if compte.get("type") == "gmail" else cl.lire_boite(compte, mdp or None)
-                    res.append(f"{compte['nom'] or compte['adresse']} : {b['non_lus']} non lus ✓")
+                    res.append(f"{compte['nom'] or compte['adresse']} : {b['nouveaux']} nouveaux "
+                               f"({b['non_lus']:,} non lus) ✓".replace(",", " "))
                 except Exception as e:
                     res.append(f"{compte['nom'] or compte['adresse']} : {e}")
             self.dire(" · ".join(res))
@@ -1408,7 +1779,8 @@ class Fenetre(tk.Tk):
         self.status.set("Préparation du récap…")
         en_fond(lambda: (cl.ouvrir_recap(), self.dire("")))
 
-    def page_musique(self, f):
+    def page_musique(self, page):
+        f = self.carte(page, "Musique")
         m = self.cfg["musique"]
         self.musique = tk.StringVar(value=m["fichier"] or AUCUNE)
         self.vol = tk.IntVar(value=m["volume_pct"])
@@ -1441,9 +1813,9 @@ class Fenetre(tk.Tk):
         self.sortie = tk.StringVar(value=self.cfg.get("sortie_audio") or SORTIE_AUTO)
         self.ligne(f, 3, "Sortie audio", MenuDeroulant(f, textvariable=self.sortie, width=46,
                                                        values=[SORTIE_AUTO] + sorties))
-        ttk.Separator(f).grid(row=4, column=0, columnspan=3, sticky="ew", pady=(8, 6))
+        f = self.carte(page, "Durée")
         Case(f, "Jouer la musique jusqu'à la fin", self.jusqu_a_la_fin).grid(
-            row=5, column=0, columnspan=3, sticky="w", pady=(8, 4))
+            row=5, column=0, columnspan=3, sticky="w", pady=(0, 8))
         curseur_max = Curseur(f, self.duree_max, 10, 600, 10, unite="s")
         et_max = self.ligne(f, 6, "Sinon, arrêter après", curseur_max)
         self.ligne(f, 7, "Fondu de fin", Curseur(f, self.fondu_fin, 0, 10, 0.5, unite="s"))
@@ -1459,7 +1831,8 @@ class Fenetre(tk.Tk):
                   text="Pour couper la musique : touche Lecture/Pause ou Stop du clavier, ou Ctrl + Alt + M").grid(
             row=8, column=0, columnspan=3, sticky="w", pady=(10, 0))
 
-    def page_detection(self, f):
+    def page_detection(self, page):
+        f = self.carte(page, "Micro")
         d = self.cfg["detection"]
         try:
             micros = cl.micros_dispo()
@@ -1469,6 +1842,7 @@ class Fenetre(tk.Tk):
         self.ligne(f, 0, "Micro", MenuDeroulant(f, textvariable=self.micro, width=40,
                                                 values=["(par défaut)"] + micros))
         self.det = {}
+        f = self.carte(page, "Détection des claps")
         reglages = [("brillance_min", "Brillance min", 0.02, 0.5, 0.01),
                     ("attaque_min", "Attaque min", 2, 20, 0.5),
                     ("decroissance_max", "Décroissance max", 0.05, 0.6, 0.01),
@@ -1480,10 +1854,10 @@ class Fenetre(tk.Tk):
             self.ligne(f, i, txt, Curseur(f, self.det[cle], mini, maxi, pas,
                                           unite={"ecart_max": "s", "fond_min": "fois"}.get(cle, "")))
         boutons = ttk.Frame(f)
-        boutons.grid(row=8, column=0, columnspan=3, sticky="w", pady=(16, 0))
+        boutons.grid(row=8, column=0, columnspan=3, sticky="w", pady=(12, 0))
         ttk.Button(boutons, text="▶  Calibrer automatiquement", style="Accent.TButton",
                    command=lambda: Calibrage(self)).pack(side="left")
-        ttk.Button(boutons, text="Valeurs par défaut", command=self.detection_par_defaut).pack(side="left", padx=12)
+        ttk.Button(boutons, text="Valeurs par défaut", command=self.detection_par_defaut).pack(side="left", padx=14)
         ttk.Button(boutons, text="▶  Mode réglage (affiche l'analyse des sons)",
                    command=self.mode_debug).pack(side="left")
 
@@ -1492,7 +1866,8 @@ class Fenetre(tk.Tk):
             var.set(cl.DEFAUT["detection"][cle])
         self.status.set("Détection : valeurs par défaut (pense à enregistrer)")
 
-    def page_systeme(self, f):
+    def page_systeme(self, page):
+        f = self.carte(page, "Démarrage")
         sy = self.cfg["systeme"]
         self.demarrage = tk.BooleanVar(value=os.path.exists(cl.RACCOURCI_DEMARRAGE))
         self.reveil_initial = sy.get("reveil", False)
@@ -1514,14 +1889,14 @@ class Fenetre(tk.Tk):
         self.ecoute_max = tk.IntVar(value=int(sy.get("ecoute_max_min", 10)))
         self.raccourci = tk.StringVar(value=cl.RACCOURCIS.get(sy.get("raccourci", ""), sy.get("raccourci", "")))
         Case(f, "Lancer Runner à l'ouverture de session Windows", self.demarrage).grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=6)
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 9))
         Case(f, "Lancer Runner à la sortie de veille", self.reveil).grid(
-            row=1, column=0, columnspan=3, sticky="w", pady=6)
+            row=1, column=0, columnspan=3, sticky="w", pady=9)
         Case(f, "Activer le point d'accès Wi-Fi du PC au lancement de Runner", self.point_acces).grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=6)
+            row=2, column=0, columnspan=3, sticky="w", pady=9)
         ttk.Button(f, text="▶  Activer le point d'accès maintenant", command=self.activer_wifi).grid(
             row=3, column=0, columnspan=2, sticky="w", pady=(10, 0))
-        ttk.Separator(f).grid(row=4, column=0, columnspan=3, sticky="ew", pady=18)
+        f = self.carte(page, "Écoute et raccourci")
         self.ligne(f, 5, "Attente max avant lancement", Curseur(f, self.attente_max, 1, 15, 0.5, unite="s"))
         cadre_e = ttk.Frame(f)
         Curseur(cadre_e, self.ecoute_max, 0, 60, 1, unite="min").pack(side="left")
@@ -1535,7 +1910,10 @@ class Fenetre(tk.Tk):
             side="left", padx=12)
         self.ligne(f, 7, "Raccourci clavier", cadre_r)
 
-    def page_journal(self, f):
+    def page_journal(self, page):
+        carte = Carte(page, "Journal", remplir=True)
+        carte.pack(fill="both", expand=True)
+        f = carte.grille
         barre = ttk.Frame(f)
         barre.pack(fill="x", pady=(0, 12))
         self.alertes_seulement = tk.BooleanVar(value=False)
@@ -1559,6 +1937,8 @@ class Fenetre(tk.Tk):
         self.after(1500, self.surveiller_journal)
 
     def surveiller_journal(self):
+        """Toutes les 1,5 s : journal rafraîchi (si affiché), pastille du préchargement, et bouton
+        Stop proposé quand Runner lance la musique en arrière-plan."""
         if self.page_actuelle == "Journal":
             self.charger_journal()
         self.maj_puce()
@@ -1667,6 +2047,7 @@ class Fenetre(tk.Tk):
         return ip_fichier or ip
 
     def maj_ville(self):
+        """Nouvelles coordonnées si la ville de la météo a changé (l'ancienne est gardée si introuvable)."""
         ville = self.voix_ville.get().strip()
         if ville != self.coords[0]:
             pos = cl.geocoder(ville)
@@ -1683,6 +2064,8 @@ class Fenetre(tk.Tk):
         return cl.CFG
 
     def enregistrer(self):
+        """Écrit config.json, puis applique ce qui touche Windows : lancement au démarrage,
+        à la sortie de veille, mots de passe IMAP."""
         cfg = self.reglages_actuels()
         try:
             cl.sauver_config(cfg)
@@ -1708,6 +2091,7 @@ class Fenetre(tk.Tk):
 
     # -------------------------------- Tests --------------------------------
     def debut_test(self, nom, message):
+        """Un test commence : message en bas et bouton Stop."""
         cl.print(f"Test « {nom} » : {message}")
         self.tests.add(nom)
         cl.ARRET.clear()
@@ -1716,6 +2100,7 @@ class Fenetre(tk.Tk):
         self.bouton_stop.pack(side="right", padx=(0, 8))
 
     def fin_test(self, nom, message=None):
+        """Un test est fini (appelable depuis un fil secondaire) : Stop caché quand plus rien ne tourne."""
         if message:
             cl.print(f"Test « {nom} » : {message}")
 
