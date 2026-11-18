@@ -1,8 +1,8 @@
 # Runner — documentation
 
-Tous les réglages de la fenêtre `clap_config.py`, page par page. Entre parenthèses : la clé correspondante dans `config.json`.
+Tous les réglages de la fenêtre `runner_reglages.py`, page par page. Entre parenthèses : la clé correspondante dans `config.json`. Dans la fenêtre, cette documentation est aussi la page **Aide**, et le lien « Aide » de chaque section y mène directement.
 
-**Sommaire :** [Déroulement](#déroulement) · [La fenêtre](#la-fenêtre) · [Apps](#apps) · [LED](#led) · [Voix](#voix) · [Infos](#infos--emploi-du-temps-et-mails) · [Musique](#musique) · [Détection](#détection) · [Système](#système) · [Journal](#journal) · [Fichiers](#fichiers-et-données)
+**Sommaire :** [Déroulement](#déroulement) · [La fenêtre](#la-fenêtre) · [Apps](#apps) · [LED](#led) · [Voix](#voix) · [Infos](#infos--météo-emploi-du-temps-et-mails) · [Musique](#musique) · [Détection](#détection) · [Système](#système) · [Journal](#journal) · [Fichiers](#fichiers-et-données)
 
 ---
 
@@ -11,14 +11,16 @@ Tous les réglages de la fenêtre `clap_config.py`, page par page. Entre parenth
 1. **Écoute.** Runner écoute le micro et prépare à l'avance sa phrase (refaite chaque minute). Il active le point d'accès Wi-Fi si c'est demandé.
 2. **Déclenchement :** un double clap, ou le raccourci clavier (Ctrl + Alt + R par défaut).
 3. **Préparation, quelques secondes au plus** (« Attente max ») : la phrase et l'adresse des LED. Si la phrase n'est pas prête, c'est la phrase de secours qui est dite. Si les LED ne répondent pas, le reste part sans elles, et elles suivent dès qu'elles répondent.
-4. **Top départ :** musique, LED et apps en même temps. Le webmail s'ouvre dans le navigateur s'il est demandé.
+4. **Top départ :** musique, LED et apps en même temps. Les webmails s'ouvrent dans le navigateur si c'est demandé (un onglet déjà ouvert n'est pas ajouté une deuxième fois).
 5. **Voix :** après « Délai après la musique ». La musique baisse pendant qu'elle parle.
 6. **Placement** des fenêtres, puis **récap** à l'écran (cours du jour, mails) s'il est activé.
-7. **Fin :** Runner reste actif, sans fenêtre, jusqu'à la fin de la musique.
+7. **Fin :** Runner reste actif, sans fenêtre, jusqu'à la fin de la musique, puis n'attend plus que le raccourci clavier (voir « Après un lancement »).
 
-**Arrêter la musique :** touche Lecture/Pause ou Stop du clavier, **Ctrl + Alt + M**, le bouton **Stop** de la fenêtre, ou `python clap_launcher.py --stop`. Les LED restent allumées.
+**Arrêter la musique :** touche Lecture/Pause ou Stop du clavier, **Ctrl + Alt + M**, le bouton **Stop** de la fenêtre, ou `python runner.py --stop`. Les LED restent allumées.
 
-**Sans déclenchement :** au bout de « Arrêt de l'écoute sans clap » (10 min), le micro est fermé. Le raccourci clavier, lui, reste actif. Si le micro ne renvoie plus aucun son pendant 10 s (débranché), l'écoute s'arrête avec une alerte dans le journal.
+**Sans déclenchement :** au bout de « Arrêt de l'écoute sans clap » (10 min), le micro est fermé. Le raccourci clavier, lui, reste actif.
+
+**Après un lancement :** le micro n'est plus écouté, mais le raccourci clavier reste actif toute la session pour relancer Runner (sans rien consommer en attendant). À la sortie de veille, un nouveau Runner reprend l'écoute des claps et prend le relais. Si le micro ne renvoie plus aucun son pendant 10 s (débranché), l'écoute s'arrête avec une alerte dans le journal.
 
 ---
 
@@ -26,11 +28,13 @@ Tous les réglages de la fenêtre `clap_config.py`, page par page. Entre parenth
 
 | Élément | Rôle |
 |---|---|
-| **Enregistrer** | Écrit les réglages dans `config.json`. Applique aussi le lancement au démarrage, la sortie de veille et les mots de passe mail. |
-| **Tester tout** | Lance Runner comme à l'allumage du PC (écoute, double clap, tout le reste), avec **les réglages affichés, même non enregistrés**. |
+| **Enregistrer** | Écrit les réglages dans `config.json`. Applique aussi le lancement au démarrage, la sortie de veille et les mots de passe mail, et démarre Runner en arrière-plan s'il doit tourner et ne tourne pas encore. |
+| **Tester tout** | Lance Runner comme à l'allumage du PC (écoute, double clap, tout le reste), avec **les réglages affichés, même non enregistrés**. Il tourne sans fenêtre : son déroulement s'affiche dans la page Journal. |
 | **Boutons ▶ des pages** | Testent une seule partie : apps, LED, rythme, voix, musique, emploi du temps, mails… |
 | **Stop** | N'apparaît que pendant un test ou une musique lancée par Runner. Coupe tout. Il n'éteint les LED que si le test les utilisait. |
 | **Ligne d'état** | En bas à gauche : ce qui est en cours et le résultat. |
+| **Aide** | Cette documentation, avec une recherche. Le lien « Aide › » à côté du titre de chaque section y mène directement. |
+| **Version** | En bas du menu de gauche (nouveautés dans `CHANGELOG.md`). |
 
 Les réglages sans effet dans le mode choisi sont **grisés** (par exemple le motif des LED en mode rythme).
 
@@ -60,20 +64,25 @@ LED Govee pilotées en réseau local : active **« LAN Control »** dans l'app G
 | **Luminosité** (`leds.luminosite`) | 1 à 100 % ; maximum des flashs en mode rythme. |
 | **Durée du motif** (`leds.duree`) | 0 à 10 s ; 0 = couleur finale tout de suite. |
 | **Adresse IP** (`leds.ip`) | « Rechercher » la trouve. Runner la met à jour tout seul si elle change. |
+
+**Fiabilité.** L'état final est vérifié auprès des LED (jusqu'à 3 essais). Juste après l'allumage du PC, Runner réessaie de les joindre pendant 60 s. Si elles s'allument mais que le journal indique « sans réponse », c'est le pare-feu qui bloque leurs réponses : autorise Python sur les réseaux privés.
+
+### Mode rythme
+
+| Réglage | Rôle |
+|---|---|
 | **Suivre le rythme de la musique** (`leds.rythme.actif`) | Remplace le motif : les LED s'allument sur le premier coup de la musique, puis clignotent sur ses coups. |
 | **Couleurs** (`leds.rythme.mode`) | `mono` (couleur finale) ou `couleurs` (la teinte change au fil des coups). |
 | **Sensibilité** (`leds.rythme.sensibilite`) | Plus haut = plus de coups suivis. |
 | **Avance des LED** (`leds.rythme.avance_ms`) | Compense le retard des LED. À augmenter si elles réagissent après le son. |
-| **Éteindre pendant les silences** (`leds.rythme.eteindre_silences`) | Sinon, luminosité minimum. Éteindre ne les abîme pas. |
+| **Éteindre les LED pendant les silences** (`leds.rythme.eteindre_silences`) | Sinon, luminosité minimum. Éteindre ne les abîme pas. |
 
-**Mode rythme, en bref.** Le morceau est analysé une seule fois, en quelques secondes (« préchargement »), et le résultat est gardé dans `cache_rythme`. Une pastille à côté de la musique indique l'état : « ● préchargé », « ◌ en cours » ou « ○ à faire ». Le préchargement se fait tout seul, et un lancement attend qu'il soit terminé. Pendant la musique, Runner suit un programme prêt d'avance, calé sur ce qu'on entend, avec au plus 6 commandes par seconde :
+**En bref.** Le morceau est analysé une seule fois, en quelques secondes (« préchargement »), et le résultat est gardé dans `cache_rythme`. Une pastille à côté de la musique indique l'état : « ● préchargé », « ◌ en cours » ou « ○ à faire ». Le préchargement se fait tout seul, et un lancement attend qu'il soit terminé. Pendant la musique, Runner suit un programme prêt d'avance, calé sur ce qu'on entend, avec au plus 6 commandes par seconde :
 - **un flash au maximum sur chaque coup marqué, puis une retombée au minimum** ;
 - **les séries rapides** (moins de 0,33 s entre deux coups) sont rendues fort / faible / fort ;
 - **les silences et les arrêts du riff** éteignent les LED, qui se rallument juste avant le coup suivant.
 
 L'intensité passe par la luminosité : les Govee ignorent une couleur « assombrie ».
-
-**Fiabilité.** L'état final est vérifié auprès des LED (jusqu'à 3 essais). Juste après l'allumage du PC, Runner réessaie de les joindre pendant 60 s. Si elles s'allument mais que le journal indique « sans réponse », c'est le pare-feu qui bloque leurs réponses : autorise Python sur les réseaux privés.
 
 ---
 
@@ -83,57 +92,78 @@ L'intensité passe par la luminosité : les Govee ignorent une couleur « assomb
 |---|---|
 | **Runner parle au démarrage** (`voix.active`) | Active la voix. |
 | **Voix** (`voix.voix`) | Voix neuronales Microsoft. ▶ fait écouter la phrase actuelle. |
-| **Ville (météo)** (`voix.ville`) | Ses coordonnées sont retrouvées toutes seules. |
 | **Phrase principale** (`voix.parties`) | 6 parties, dites dans l'ordre. Chacune peut être cochée ou non, et son texte modifié. |
 | **Phrase de secours** (`voix.secours`) | Dite si la phrase principale n'est pas prête à temps. |
 | **Délai après la musique** (`voix.delai`) | Temps entre le début de la musique et la voix. |
 
+La voix neuronale a besoin d'Internet. Sans Internet, la phrase de secours est dite par la voix intégrée de Windows. La ville de la météo se règle dans la page Infos.
+
+### Phrase principale
+
 | Partie | Texte par défaut | Variables |
 |---|---|---|
-| Accueil | `Bonjour Monsieur.` | — |
+| Accueil | `Bonjour.` | — |
 | Heure | `Il est {heure}.` | `{heure}` (« 14 heures 5 », « midi ») |
 | Météo | `Il fait {temperature} degrés à {ville}, avec {ciel}.` | `{temperature}`, `{ciel}`, `{ville}` |
 | Cours | `Votre prochain cours, {cours}, commence à {heure_cours}{salle}.` | `{cours}`, `{heure_cours}`, `{salle}` (« , en Amphi B ») |
 | Mails | `Vous avez {nb_mails} nouveaux mails, dont le dernier de {expediteur}.` | `{nb_mails}` (« 3 », « plus de 50 »), `{expediteur}`, `{objet}` (du dernier nouveau mail) |
 | Fin | `Votre espace de travail est prêt.` | — |
 
+**La partie Cours a trois phrases**, réglables avec le bouton « Autres cas… » : celle de la ligne quand un cours est encore à venir aujourd'hui, une quand il n'y a **pas cours** de la journée (`Vous n'avez pas cours aujourd'hui.`) et une quand les cours sont **finis** (`Vous n'avez plus cours aujourd'hui.`). Une phrase vide : rien n'est dit.
+
 **La partie Mails a trois phrases**, réglables avec le bouton « Autres cas… » : une quand il y a **plusieurs** nouveaux mails (celle de la ligne), une pour **un seul** (`Vous avez un nouveau mail, de {expediteur}.`) et une pour **aucun** (`Aucun nouveau mail.` ; vide = rien n'est dit).
 
-**Une partie est sautée** si elle est décochée ou vide, ou si son information manque : pas de météo, plus de cours aujourd'hui, mails non configurés. L'aperçu sous les parties montre la phrase complète (avec des exemples si besoin).
-
-La voix neuronale et la météo (Open-Meteo, gratuit, sans compte) ont besoin d'Internet. Sans Internet, la phrase de secours est dite par la voix intégrée de Windows.
+**Une partie est sautée** si elle est décochée ou vide, ou si son information manque : pas de météo, emploi du temps illisible, mails non configurés. L'aperçu sous les parties montre la phrase complète (avec des exemples si besoin).
 
 ---
 
-## Infos : emploi du temps et mails
+## Infos : météo, emploi du temps et mails
+
+### Météo
+
+| Réglage | Rôle |
+|---|---|
+| **Ville** (`voix.ville`) | Ville de la partie « Météo » de la phrase (page Voix). Ses coordonnées sont cherchées pendant que tu tapes : à côté du champ, **✓** suivi du lieu retenu (utile pour les homonymes), **ville introuvable**, ou **pas de connexion** (Runner la cherchera lui-même au lancement, avec un nouvel essai toutes les 2 min). Vide : pas de météo. |
+
+La météo vient d'Open-Meteo (gratuit, sans compte) et demande Internet. Elle est gardée 15 min.
 
 ### Emploi du temps
 
 | Réglage | Rôle |
 |---|---|
 | **Annoncer le prochain cours** (`infos.agenda.actif`) | Active la partie « Cours » de la phrase et du récap. |
-| **Lien du calendrier (.ics)** (`infos.agenda.lien`) | Lien d'export de ton emploi du temps (`https://` ou `webcal://`). |
+| **Calendrier (.ics)** (`infos.agenda.lien`) | Lien d'export de ton emploi du temps (`https://` ou `webcal://`), conseillé car il reste à jour tout seul ; ou un fichier `.ics` téléchargé (bouton **Choisir un fichier…**), à remplacer quand l'emploi du temps change. Le fichier peut être n'importe où sur le PC. |
 
 **Trouver le lien dans ADE :** ouvre ton emploi du temps, clique sur le bouton d'export (icône calendrier, « Export agenda » ou « Exporter »), choisis une période assez longue (le semestre), puis copie le lien proposé.
 
-Le calendrier est relu au plus toutes les 30 min. Sans connexion, la dernière version téléchargée sert.
+Un calendrier en ligne est relu au plus toutes les 30 min ; sans connexion, la dernière version téléchargée sert. Un fichier sur le PC est relu à chaque fois.
 
 ### Mails
 
 | Réglage | Rôle |
 |---|---|
 | **Annoncer les nouveaux mails** (`infos.mails.actif`) | Active la partie « Mails » de la phrase et du récap. |
-| **Comptes** (`infos.mails.comptes`) | Une ligne par boîte. **Gmail** : bouton « Se connecter avec Google ». **Autres boîtes** : adresse, serveur IMAP et mot de passe ; une fois le mot de passe enregistré, la case laisse la place à un bouton « Déconnecter », qui l'efface. Pour toutes : un nom et l'adresse du webmail. Boutons « + Gmail » et « + Autre boîte mail ». |
-| **Ouvrir les webmails au lancement** (`infos.ouvrir_webmail`) | Ajoute l'onglet de chaque webmail dans le premier navigateur de la page Apps. |
-| **Afficher le récap à l'écran** (`infos.recap`) | Petite fenêtre en haut à droite : cours restants de la journée, et pour chaque boîte le nombre de nouveaux mails (et, en petit, le total des non lus), les 5 derniers nouveaux (expéditeur et objet), et un bouton pour ouvrir le webmail. |
+| **Comptes** (`infos.mails.comptes`) | Une ligne par boîte : nom, adresse, serveur IMAP, mot de passe et adresse du webmail. Une fois le mot de passe enregistré, la case laisse la place à un bouton « Déconnecter », qui l'efface. **« + Gmail »** remplit le serveur et le webmail de Gmail (voir plus bas pour le mot de passe) ; **« + Autre boîte mail »** pour toute autre messagerie. **« + Gmail (connexion Google) »** n'apparaît que si `google_client.json` est présent. |
+| **Ouvrir les webmails dans le navigateur au lancement** (`infos.ouvrir_webmail`) | Ajoute l'onglet de chaque webmail dans le premier navigateur de la page Apps. |
+| **Afficher le récap à l'écran au lancement** (`infos.recap`) | Petite fenêtre en haut à droite : cours restants de la journée, et pour chaque boîte le nombre de nouveaux mails (et, en petit, le total des non lus), les 5 derniers nouveaux (expéditeur et objet), et un bouton pour ouvrir le webmail. |
 
 - **Nouveaux mails :** les mails non lus de la boîte de réception arrivés **depuis le dernier lancement de Runner** (au plus 7 jours ; les dernières 24 h au tout premier lancement). Le total des non lus, souvent des milliers, n'est pas annoncé. Au-delà de 50, Runner dit « plus de 50 nouveaux mails ».
 - **Lecture seule :** rien n'est marqué comme lu. Les boîtes sont relues au plus toutes les 5 min.
-- **Sécurité :** mots de passe et connexions Google sont gardés par Windows, dans le Gestionnaire d'identification (chiffrés, liés à ta session Windows). Ils ne sont **jamais** écrits dans `config.json`. Ils apparaissent dans *Panneau de configuration › Gestionnaire d'identification › Informations d'identification Windows* sous le nom `Runner:…`. Supprimer un compte avec ✕ les efface aussi (et retire l'autorisation chez Google pour Gmail).
+- **Sécurité :** mots de passe (et connexions Google) sont gardés par Windows, dans le Gestionnaire d'identification (chiffrés, liés à ta session Windows). Ils ne sont **jamais** écrits dans `config.json`. Ils apparaissent dans *Panneau de configuration › Gestionnaire d'identification › Informations d'identification Windows* sous le nom `Runner:…`. Supprimer un compte avec ✕ les efface aussi (et retire l'autorisation chez Google pour un compte en connexion Google).
 
-#### Gmail : « Se connecter avec Google »
+#### Gmail : mot de passe d'application
 
-Runner utilise la connexion officielle de Google (OAuth). Tu te connectes une fois dans ton navigateur, et Runner reçoit seulement une autorisation de **lecture** de tes mails (`gmail.readonly`) : ni mot de passe, ni droit d'envoyer ou de supprimer. « Déconnecter » retire cette autorisation chez Google. Tu peux aussi la retirer depuis ton compte Google (Sécurité › Applications tierces).
+Google n'accepte pas le mot de passe de ton compte dans une autre app : il faut un **mot de passe d'application**, une clé de 16 lettres réservée à Runner.
+1. Active la **validation en deux étapes** de ton compte Google, si ce n'est pas déjà fait (*Compte Google › Sécurité*).
+2. Dans Runner : page Infos › **+ Gmail**, puis tape ton adresse Gmail.
+3. Clique sur **Créer ›** à côté de la case du mot de passe : la page Google des mots de passe d'application s'ouvre. Donne-lui un nom (« Runner ») et copie la clé affichée.
+4. Colle-la dans la case (les espaces sont retirés tout seuls), puis **Enregistrer** et **▶ Tester les mails**.
+
+Tu peux supprimer ce mot de passe d'application à tout moment depuis la même page Google : Runner ne pourra plus lire la boîte. Les adresses Gmail fournies par une **école ou une entreprise** (Google Workspace) refusent les mots de passe d'application : pour elles, utilise la connexion Google ci-dessous.
+
+#### Gmail : « Se connecter avec Google » (option)
+
+Runner peut aussi utiliser la connexion officielle de Google (OAuth). Tu te connectes une fois dans ton navigateur, et Runner reçoit seulement une autorisation de **lecture** de tes mails (`gmail.readonly`) : ni mot de passe, ni droit d'envoyer ou de supprimer. « Déconnecter » retire cette autorisation chez Google. Tu peux aussi la retirer depuis ton compte Google (Sécurité › Applications tierces).
 
 **Préparation, une seule fois (environ 10 min)** : il faut un « ID client OAuth » Google, gratuit.
 1. Sur [console.cloud.google.com](https://console.cloud.google.com), crée un projet (par exemple « Runner »).
@@ -141,10 +171,10 @@ Runner utilise la connexion officielle de Google (OAuth). Tu te connectes une fo
 3. *Google Auth Platform* (ou *Écran de consentement OAuth*) : type **Externe**, nom de l'app « Runner », ton adresse mail comme contact.
 4. Dans *Branding*, ne remplis que le nom et les deux adresses mail. **N'ajoute pas de logo** : un logo oblige à faire valider l'app par Google. Puis, dans *Audience*, clique sur **Publier l'application** (statut « En production »). En statut « Test », Google oblige à se reconnecter tous les 7 jours. Si Google refuse de publier sans liens, renseigne la page d'accueil, la confidentialité et les conditions avec les pages du projet en ligne (`README.md`, `PRIVACY.md`, `TERMS.md`).
 5. *Clients* (ou *Identifiants*) › **Créer un ID client OAuth** › type **Application de bureau** › **Télécharger le JSON**.
-6. Dans Runner : page Infos › **+ Gmail** › **Se connecter avec Google**, et choisis le fichier JSON. Il est copié dans le projet sous le nom `google_client.json`.
+6. Renomme le fichier JSON en `google_client.json`, mets-le dans le dossier de Runner, puis rouvre la fenêtre de réglages : le bouton **+ Gmail (connexion Google)** apparaît dans la page Infos. Ajoute la boîte, puis clique sur **Se connecter avec Google**.
 7. Google affiche « Google n'a pas validé cette application ». C'est normal pour une app personnelle : clique sur *Paramètres avancés › Accéder à Runner*, puis autorise la lecture des mails.
 
-**Pour des amis :** donne-leur ton `google_client.json`, ou laisse chacun créer le sien. Une app non validée par Google accepte au plus 100 personnes en tout.
+**Pour des amis :** le mot de passe d'application suffit dans la plupart des cas. Pour la connexion Google, donne-leur ton `google_client.json` (pas en ligne), ou laisse chacun créer le sien. Une app non validée par Google accepte au plus 100 personnes en tout.
 
 #### Autres boîtes (école, Outlook, fournisseur d'accès…) : IMAP
 
@@ -160,7 +190,7 @@ Il faut l'adresse du **serveur IMAP** de la messagerie. Elle est indiquée dans 
 | **Volume** (`musique.volume_pct`) | Volume de la musique. |
 | **Pendant la voix** (`musique.pendant_voix_pct`) | Volume pendant que Runner parle (100 % = pas de baisse). |
 | **Sortie audio** (`sortie_audio`) | « Auto » = la sortie Windows du moment. |
-| **Jouer jusqu'à la fin** (`musique.jusqu_a_la_fin`) | Sinon, arrêt après la durée choisie. |
+| **Jouer la musique jusqu'à la fin** (`musique.jusqu_a_la_fin`) | Sinon, arrêt après la durée choisie. |
 | **Sinon, arrêter après** (`musique.duree_max_s`) | 10 à 600 s. |
 | **Fondu de fin** (`musique.fondu_fin_s`) | Baisse progressive avant l'arrêt (0 = coupure nette). |
 
@@ -178,9 +208,11 @@ Il faut l'adresse du **serveur IMAP** de la messagerie. Elle est indiquée dans 
 | **Volume minimum** (`detection.seuil_min`) | Volume minimal d'un clap. |
 | **Écart max entre 2 claps** (`detection.ecart_max`) | Temps maximal entre les deux claps (minimum fixé à 0,12 s). |
 
-**Calibrer automatiquement (recommandé).** Une fenêtre guide en deux étapes : tu tapes 6 fois dans tes mains, puis tu parles normalement pendant 8 s. Runner mesure tes claps et ta voix, et place chaque seuil **à mi-chemin entre les deux**. Il ne le resserre vers les claps que si des sons de ta voix passent encore. Le bilan indique combien de claps sont reconnus et combien de sons de ta voix seraient pris pour un clap. « Appliquer » remplit les réglages : pense ensuite à enregistrer. Pendant le calibrage, le Runner en arrière-plan est en pause.
+### Calibrer et tester
 
-**Valeurs par défaut** remet les six réglages d'origine. **Mode réglage** ouvre une console qui affiche les mesures de chaque son fort (`<== CLAP` quand il est accepté).
+**Calibrer automatiquement (recommandé).** Une fenêtre guide en deux étapes : tu fais 5 doubles claps (le vrai geste qui lance Runner : le second clap d'un double sonne souvent différemment), puis tu parles normalement pendant 8 s. Runner part des **valeurs par défaut** et ne les change que si c'est nécessaire, en gardant toujours une large marge : un réglage que tes claps ne passent pas est assoupli (moitié du clap le moins marqué) ; si des sons de ta voix passent, il resserre un réglage à la fois, celui qui écarte le plus ta voix, sans jamais s'approcher à moins de la moitié de tes claps. Les claps du calibrage, tapés au même endroit, se ressemblent plus que les vrais : cette marge évite de rater un clap tapé plus loin ou de biais. Le bilan indique combien de doubles claps sont reconnus sur 5 (et de claps sur 10 : un clap oublié ou trop faible compte comme raté) et combien de sons de ta voix seraient pris pour un clap. « Appliquer » remplit les réglages : pense ensuite à enregistrer. Pendant le calibrage, le Runner en arrière-plan est en pause.
+
+**Valeurs par défaut** remet les six réglages d'origine. **Mode réglage** ouvre une fenêtre de test : chaque son fort entendu s'affiche avec ses mesures, en vert ce qui passe et en rouge ce qui fait refuser le son, et les doubles claps sont signalés. **Rien n'est lancé.** Les curseurs de la page s'appliquent en direct pendant le test : pratique pour voir l'effet d'un réglage. Le Runner en arrière-plan est en pause pendant ce temps.
 
 Si le micro n'entend pas les claps, désactive la **réduction de bruit** de son pilote : elle les efface souvent.
 
@@ -190,16 +222,28 @@ Si le micro n'entend pas les claps, désactive la **réduction de bruit** de son
 
 | Réglage | Rôle |
 |---|---|
-| **Lancer Runner à l'ouverture de session** (`systeme.demarrage_session`) | Raccourci dans le dossier Démarrage de Windows. |
+| **Lancer Runner à l'ouverture de session Windows** (`systeme.demarrage_session`) | Raccourci dans le dossier Démarrage de Windows. |
 | **Lancer Runner à la sortie de veille** (`systeme.reveil`) | Tâche planifiée `Runner\Reveil`. |
-| **Point d'accès Wi-Fi au lancement** (`systeme.point_acces`) | Partage la connexion du PC pour les LED. Rien n'est touché s'il est déjà actif. |
+| **Activer le point d'accès Wi-Fi du PC au lancement de Runner** (`systeme.point_acces`) | Partage la connexion du PC pour les LED. Rien n'est touché s'il est déjà actif. |
 | **Attente max avant lancement** (`systeme.attente_max`) | Temps maximal d'attente de la voix et des LED. |
 | **Arrêt de l'écoute sans clap** (`systeme.ecoute_max_min`) | Fermeture du micro sans double clap (0 = jamais). |
-| **Raccourci clavier** (`systeme.raccourci`) | Déclenche Runner comme un double clap : Ctrl + Alt + R, Ctrl + Alt + Espace, Ctrl + Maj + R, Win + Alt + R, Ctrl + Alt + F12, ou aucun. Il reste actif après la fermeture du micro, sans rien consommer. |
+| **Raccourci clavier** (`systeme.raccourci`) | Déclenche Runner comme un double clap : Ctrl + Alt + R, Ctrl + Alt + Espace, Ctrl + Maj + R, Win + Alt + R, Ctrl + Alt + F12, ou aucun. Il reste actif après la fermeture du micro et après un lancement (pour relancer Runner), sans rien consommer. Il ne marche que si Runner tourne : coche « Lancer Runner à l'ouverture de session » (Runner démarre alors aussi tout de suite, à l'enregistrement). |
 
 **Conseil :** dans *Paramètres › Point d'accès sans fil mobile*, désactive l'économie d'énergie, sinon Windows coupe le point d'accès quand rien n'y est connecté.
 
 Les raccourcis (Bureau et démarrage) sont vérifiés et réparés à chaque démarrage. Ils passent par `pyw.exe`, qui suit les mises à jour de Python.
+
+### Désinstaller
+
+Bouton **Désinstaller Runner…** (section Désinstallation), ou double-clic sur `desinstaller.bat` dans le dossier de Runner. Rien n'est supprimé avant ta confirmation. Sont retirés :
+- Runner s'il tourne ;
+- les connexions Google, **révoquées chez Google**, puis tous les mots de passe et jetons `Runner:…` du Gestionnaire d'identification ;
+- la tâche planifiée `Runner\Reveil` (et son dossier « Runner » dans le Planificateur de tâches), les raccourcis du Bureau et du Démarrage ;
+- les fichiers temporaires `runner_*` ;
+- les fichiers de Runner (réglages, journal, analyses des musiques…) puis son dossier ;
+- sur demande : tes musiques (dossier `musiques`, gardé par défaut), les bibliothèques Python et Python lui-même, **seulement s'ils ont été installés par `installer.bat`** (noté dans `installation.json`) : un Python que tu avais déjà n'est jamais touché.
+
+Seuls les fichiers de Runner sont supprimés : si le dossier contient autre chose, ces fichiers sont laissés en place et listés. Pour Gmail en mot de passe d'application, la page Google des mots de passe d'application s'ouvre : supprime celui de Runner (Runner ne peut pas le faire lui-même).
 
 ---
 
@@ -212,15 +256,20 @@ Tout est noté dans `runner.log` : déclenchements, apps, LED, alertes (en jaune
 ## Fichiers et données
 
 **`config.json`** est créé au premier enregistrement. Toute clé absente prend sa valeur par défaut.
+
 - **Enregistrement sûr :** fichier temporaire puis remplacement en une seule opération ; la version précédente est gardée dans `config.json.bak`.
 - **Fichier abîmé :** Runner reprend la copie de secours, ou les valeurs par défaut, et met le fichier abîmé de côté dans `config.illisible.json`.
 - **Valeur invalide :** seule cette valeur est remplacée par sa valeur par défaut. C'est signalé dans le journal.
 - **Contenu personnel :** ville, adresse des LED, lien de l'emploi du temps, adresses mail. **Ne le partage pas tel quel.** Les mots de passe n'y sont jamais.
 
-**`google_client.json`** : ton ID client Google (connexion Gmail). Ne le publie pas en ligne ; tu peux le donner à des amis.
+**Valeurs de départ** (avant tout réglage) : micro par défaut de Windows, pas de musique, pas de ville (la météo est sautée), LED et point d'accès Wi-Fi désactivés, et une seule appli : le navigateur (Chrome s'il est installé, sinon Edge) en plein écran sur l'écran principal.
+
+**`google_client.json`** (optionnel) : ton ID client Google, pour la connexion Gmail par Google. Ne le publie pas en ligne ; tu peux le donner à des amis.
+
+**`installation.json`** : ce que `installer.bat` a lui-même installé (Python, bibliothèques), pour que la désinstallation ne retire que cela.
 
 **`cache_rythme\`** : analyses des musiques. Les analyses périmées sont supprimées toutes seules, et le dossier peut être supprimé sans risque.
 
 **Dossier temporaire de Windows (`%TEMP%`)** : fichiers `runner_*` (phrase préparée, signal d'arrêt, emploi du temps et récap en cache, pause pendant un test…). Tous peuvent être supprimés sans risque.
 
-**Commandes (dans le dossier du projet) :** `python clap_launcher.py` (écoute, avec console), `--stop` (arrête la musique), `--wifi` (active le point d'accès).
+**Commandes (dans le dossier du projet) :** `python runner.py` (écoute, avec console), `--debug` (affiche aussi l'analyse de chaque son fort), `--stop` (arrête la musique), `--wifi` (active le point d'accès), `--version` (affiche la version).

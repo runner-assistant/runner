@@ -28,9 +28,12 @@ L'utilisation des informations reçues des API Google respecte le [Règlement su
 |---|---|
 | Phrase d'accueil (heure, météo, cours, mails) | Service de synthèse vocale Microsoft (Edge TTS), pour être convertie en voix |
 | Ville choisie | Open-Meteo, pour la météo |
-| Lien de ton emploi du temps | Le serveur de ton établissement, pour le télécharger |
-| Autres boîtes mail (IMAP) | Uniquement leur propre serveur ; le mot de passe est gardé par Windows |
+| Lien de ton emploi du temps | Le serveur de ton établissement, pour le télécharger (un fichier `.ics` sur le PC reste sur ton ordinateur) |
+| Commandes des LED Govee | Uniquement les LED, sur ton réseau local |
+| Boîtes mail en IMAP (dont Gmail avec un mot de passe d'application) | Uniquement leur propre serveur ; le mot de passe est gardé par Windows. Runner y lit les mêmes informations qu'avec la connexion Google (nombre de non lus, expéditeur et objet des plus récents), sans rien modifier |
 | Réglages (`config.json`) et journal (`runner.log`) | Restent sur ton ordinateur |
+
+**Tout effacer :** la désinstallation (`desinstaller.bat`, ou page Système de la fenêtre) supprime réglages, journal, mots de passe et connexions (révoquées chez Google), et tous les fichiers de Runner.
 
 ## Contact
 

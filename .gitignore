@@ -1,0 +1,30 @@
+# Données personnelles : ne jamais publier
+config.json
+config.json.bak
+config.json.*.tmp
+config.illisible.json
+google_client.json
+runner.log
+runner.ancien.log
+
+# Propre à chaque PC ou recréé au besoin
+installation.json
+cache_rythme/
+__pycache__/
+*.pyc
+
+# Musiques (droits d'auteur) : chacun met les siennes
+musiques/
+*.mp3
+*.wav
+*.wma
+*.m4a
+
+# Fichiers personnels
+RUNNER_NOTES.md
+MISES_A_JOUR_GITHUB.md
+
+# Système
+Thumbs.db
+desktop.ini
+.vscode/
